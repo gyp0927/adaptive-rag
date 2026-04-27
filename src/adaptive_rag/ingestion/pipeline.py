@@ -1,5 +1,6 @@
 """Document ingestion pipeline."""
 
+import asyncio
 import hashlib
 import uuid
 from dataclasses import dataclass, field
@@ -134,13 +135,18 @@ class IngestionPipeline:
             embeddings = await self.embedder.embed_batch(texts)
 
             # 5. Classify each chunk by historical topic frequency and route
+            # Parallelise: N sequential vector-store round-trips -> 1 batch
+            topic_freqs = await asyncio.gather(*[
+                self.frequency_tracker.get_topic_frequency(emb)
+                for emb in embeddings
+            ])
+
             hot_chunks: list[Chunk] = []
             hot_embeddings: list[list[float]] = []
             cold_chunks: list[Chunk] = []
             cold_embeddings: list[list[float]] = []
 
-            for chunk, embedding in zip(chunks, embeddings):
-                topic_freq = await self.frequency_tracker.get_topic_frequency(embedding)
+            for chunk, embedding, topic_freq in zip(chunks, embeddings, topic_freqs):
                 if topic_freq >= self.HOT_TOPIC_THRESHOLD:
                     hot_chunks.append(chunk)
                     hot_embeddings.append(embedding)
@@ -155,11 +161,13 @@ class IngestionPipeline:
                     embeddings=hot_embeddings,
                 )
                 # Override starting score for new chunks that are already hot topics
-                for chunk in hot_chunks:
-                    await self.metadata_store.update_chunk(
+                await asyncio.gather(*[
+                    self.metadata_store.update_chunk(
                         chunk_id=chunk.chunk_id,
                         updates={"frequency_score": 0.6},
                     )
+                    for chunk in hot_chunks
+                ])
 
             # 7. Store cold chunks as raw (skip LLM compression)
             if cold_chunks:

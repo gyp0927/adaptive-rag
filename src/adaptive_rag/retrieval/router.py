@@ -80,9 +80,12 @@ class FrequencyRouter:
         if query_embedding is None:
             query_embedding = await self.embedder.embed(query_text)
 
-        # Determine routing strategy
-        strategy = await self._determine_strategy(
-            query_embedding, tier_preference
+        # Determine routing strategy (fetch topic freq once and reuse)
+        topic_freq = await self.frequency_tracker.get_topic_frequency(
+            query_embedding
+        )
+        strategy = self._determine_strategy_sync(
+            topic_freq, tier_preference
         )
 
         hot_results: list[RetrievedChunk] = []
@@ -161,20 +164,18 @@ class FrequencyRouter:
             hot_results_count=len(hot_results),
             cold_results_count=len(cold_results),
             total_latency_ms=elapsed_ms,
-            topic_frequency=await self.frequency_tracker.get_topic_frequency(
-                query_embedding
-            ),
+            topic_frequency=topic_freq,
         )
 
-    async def _determine_strategy(
+    def _determine_strategy_sync(
         self,
-        query_embedding: list[float],
+        topic_freq: float,
         tier_preference: Tier | None,
     ) -> RoutingStrategy:
-        """Determine routing strategy.
+        """Determine routing strategy given pre-fetched topic frequency.
 
         Args:
-            query_embedding: Query embedding.
+            topic_freq: Already-fetched topic frequency score.
             tier_preference: Explicit tier preference.
 
         Returns:
@@ -185,11 +186,6 @@ class FrequencyRouter:
             return RoutingStrategy.HOT_ONLY
         if tier_preference == Tier.COLD:
             return RoutingStrategy.COLD_ONLY
-
-        # Check topic frequency
-        topic_freq = await self.frequency_tracker.get_topic_frequency(
-            query_embedding
-        )
 
         # High-frequency topic -> hot tier only (low latency)
         if topic_freq >= self.settings.COLD_TO_HOT_THRESHOLD:
