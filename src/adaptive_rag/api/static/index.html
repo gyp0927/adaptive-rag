@@ -736,25 +736,125 @@
             }
         }
 
-        function appendUploadResult(data, title) {
-            uploadCount++;
+        async function loadDocumentList() {
             const container = document.getElementById('uploadResult');
-            if (uploadCount === 1) container.innerHTML = '';
+            try {
+                const resp = await fetch(`${getApiBase()}/api/v1/documents?limit=100`);
+                if (!resp.ok) throw new Error('Status ' + resp.status);
+                const data = await resp.json();
+                const docs = data.documents || [];
+                uploadCount = docs.length;
 
+                if (docs.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="17 8 12 3 7 8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            <p>上传的文档将显示在这里</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = '';
+                docs.forEach(doc => {
+                    container.appendChild(buildDocumentCard(doc));
+                });
+            } catch (e) {
+                addLog('error', '加载文档列表失败: ' + e.message);
+            }
+        }
+
+        function buildDocumentCard(doc) {
             const card = document.createElement('div');
             card.className = 'chunk-card';
+            card.style.cursor = 'pointer';
+            card.dataset.docId = doc.document_id;
+            card.dataset.expanded = 'false';
+
+            const dateStr = doc.created_at ? new Date(doc.created_at).toLocaleString() : '未知';
             card.innerHTML = `
                 <div class="chunk-header">
-                    <span style="font-weight:600;color:#e2e8f0;">${title}</span>
-                    <span class="chunk-tier tier-hot">HOT</span>
+                    <span style="font-weight:600;color:#e2e8f0;">${escapeHtml(doc.title || doc.source_uri || '未命名')}</span>
+                    <span class="chunk-tier tier-hot" style="font-size:11px;">${doc.total_chunks || 0} chunks</span>
                 </div>
                 <div class="chunk-meta">
-                    <span>ID: ${data.document_id}</span>
-                    <span>Chunks: ${data.chunks_created}</span>
-                    <span>时间: ${new Date().toLocaleTimeString()}</span>
+                    <span>ID: ${doc.document_id.slice(0, 8)}...</span>
+                    <span>来源: ${escapeHtml(doc.source_uri || '')}</span>
+                    <span>时间: ${dateStr}</span>
+                </div>
+                <div class="doc-detail" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid #334155;">
+                    <div class="detail-loading" style="color:#64748b;font-size:13px;">加载中...</div>
                 </div>
             `;
-            container.insertBefore(card, container.firstChild);
+
+            card.addEventListener('click', (e) => {
+                // 防止点击详情内容时重复触发
+                if (e.target.closest('.doc-detail')) return;
+                toggleDocumentDetail(card, doc.document_id);
+            });
+            return card;
+        }
+
+        async function toggleDocumentDetail(card, docId) {
+            const detailEl = card.querySelector('.doc-detail');
+            const isExpanded = card.dataset.expanded === 'true';
+
+            if (isExpanded) {
+                detailEl.style.display = 'none';
+                card.dataset.expanded = 'false';
+                return;
+            }
+
+            detailEl.style.display = 'block';
+            card.dataset.expanded = 'true';
+
+            // 如果已经加载过内容，直接显示
+            if (detailEl.dataset.loaded === 'true') return;
+
+            try {
+                const resp = await fetch(`${getApiBase()}/api/v1/documents/${docId}`);
+                if (!resp.ok) throw new Error('Status ' + resp.status);
+                const data = await resp.json();
+
+                let chunksHtml = '';
+                if (data.chunks && data.chunks.length > 0) {
+                    data.chunks.forEach((chunk, idx) => {
+                        const tierClass = chunk.tier === 'hot' ? 'tier-hot' : 'tier-cold';
+                        const tierName = chunk.tier === 'hot' ? 'HOT' : 'COLD';
+                        chunksHtml += `
+                            <div style="margin-bottom:10px;padding:10px;background:#0f172a;border-radius:6px;border:1px solid #334155;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                                    <span class="chunk-tier ${tierClass}" style="font-size:11px;">${tierName}</span>
+                                    <span style="font-size:11px;color:#64748b;">#${chunk.chunk_index} | 频率: ${chunk.frequency_score.toFixed(2)} | 访问: ${chunk.access_count}</span>
+                                </div>
+                                <div style="font-size:13px;color:#cbd5e1;line-height:1.5;white-space:pre-wrap;">${escapeHtml(chunk.content)}</div>
+                            </div>
+                        `;
+                    });
+                } else {
+                    chunksHtml = '<div style="color:#64748b;font-size:13px;">无 chunks</div>';
+                }
+
+                detailEl.innerHTML = `
+                    <div style="margin-bottom:8px;font-size:12px;color:#94a3b8;">
+                        内容哈希: <code style="background:#0f172a;padding:2px 6px;border-radius:4px;">${data.content_hash.slice(0, 16)}...</code>
+                        | 总 chunks: ${data.total_chunks}
+                    </div>
+                    ${chunksHtml}
+                `;
+                detailEl.dataset.loaded = 'true';
+            } catch (e) {
+                detailEl.innerHTML = `<div style="color:#f87171;font-size:13px;">加载失败: ${e.message}</div>`;
+            }
+        }
+
+        function appendUploadResult(data, title) {
+            // 上传成功后刷新完整列表（从后端拉取，确保数据准确）
+            loadDocumentList();
             switchTab('upload');
         }
 
@@ -954,6 +1054,7 @@
         // Init
         addLog('info', '前端页面加载完成');
         checkHealth();
+        loadDocumentList();
         setInterval(checkHealth, 30000);
     </script>
 </body>
