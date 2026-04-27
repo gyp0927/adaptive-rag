@@ -189,6 +189,11 @@ class BaseMetadataStore(ABC):
         """Get all query clusters."""
         pass
 
+    @abstractmethod
+    async def delete_clusters(self, cluster_ids: list[uuid.UUID]) -> int:
+        """Delete query clusters. Returns count deleted."""
+        pass
+
     # Migration log operations
     @abstractmethod
     async def create_migration_log(self, log: MigrationLog) -> None:

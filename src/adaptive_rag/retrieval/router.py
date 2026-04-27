@@ -191,13 +191,13 @@ class FrequencyRouter:
             query_embedding
         )
 
-        # High-frequency topic -> hot tier only
+        # High-frequency topic -> hot tier only (low latency)
         if topic_freq >= self.settings.COLD_TO_HOT_THRESHOLD:
             return RoutingStrategy.HOT_ONLY
 
-        # Low-frequency or unknown topic -> try hot first (new docs start in hot tier)
+        # Low-frequency topic -> cold tier only (avoid wasted hot lookups)
         if topic_freq <= self.settings.HOT_TO_COLD_THRESHOLD:
-            return RoutingStrategy.HOT_FIRST
+            return RoutingStrategy.COLD_ONLY
 
         # Medium frequency -> query both
         return RoutingStrategy.BOTH

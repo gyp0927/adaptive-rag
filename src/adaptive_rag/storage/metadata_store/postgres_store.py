@@ -323,6 +323,16 @@ class PostgresMetadataStore(BaseMetadataStore):
             models = result.scalars().all()
             return [_cluster_to_dataclass(m) for m in models]
 
+    async def delete_clusters(self, cluster_ids: list[uuid.UUID]) -> int:
+        """Delete query clusters."""
+        id_strs = [_to_uuid_str(cid) for cid in cluster_ids]
+        async with self.async_session() as session:
+            result = await session.execute(
+                delete(QueryClusterModel).where(QueryClusterModel.cluster_id.in_(id_strs))
+            )
+            await session.commit()
+            return result.rowcount or 0
+
     async def create_migration_log(self, log: MigrationLog) -> None:
         """Create a migration log entry."""
         async with self.async_session() as session:

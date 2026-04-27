@@ -43,6 +43,9 @@ dependencies = [
     "opentelemetry-sdk>=1.29.0",
     "opentelemetry-instrumentation-fastapi>=0.50b0",
 
+    # Clustering
+    "scikit-learn>=1.5.0",
+
     # Utils
     "numpy>=2.1.0",
     "python-json-logger>=2.0.7",

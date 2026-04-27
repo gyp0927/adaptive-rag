@@ -126,6 +126,81 @@ class ColdTier(BaseTier):
         )
         return metadata_list
 
+    async def store_raw_chunks(
+        self,
+        chunks: list[Chunk],
+        embeddings: list[list[float]],
+        initial_score: float = 0.1,
+    ) -> list[ChunkMetadata]:
+        """Store raw (uncompressed) chunks directly into the cold tier.
+
+        This skips LLM compression and stores the original text, saving LLM
+        costs for newly ingested cold-topic content. The chunks can be later
+        compressed during scheduled migration cycles when the off-peak window
+        arrives.
+
+        Args:
+            chunks: Document chunks with full text.
+            embeddings: Pre-computed embedding vectors for each chunk.
+            initial_score: Starting frequency score (default 0.1 for cold topics).
+
+        Returns:
+            List of chunk metadata.
+        """
+        if len(chunks) != len(embeddings):
+            raise TierError("Chunks and embeddings count mismatch")
+
+        chunk_ids = [c.chunk_id for c in chunks]
+
+        # 1. Store original text in document store
+        await self.document_store.store_batch([
+            (c.chunk_id, c.text) for c in chunks
+        ])
+
+        # 2. Store vectors (original text embeddings for similarity search)
+        payloads = [{
+            "chunk_id": str(c.chunk_id),
+            "document_id": str(c.document_id),
+            "tier": Tier.COLD.value,
+            "chunk_index": c.index,
+            "tags": c.tags or [],
+            "compressed": False,
+        } for c in chunks]
+
+        await self.vector_store.upsert(
+            collection=self.collection,
+            ids=chunk_ids,
+            vectors=embeddings,
+            payloads=payloads,
+        )
+
+        # 3. Store metadata
+        now = datetime.utcnow()
+        metadata_list = []
+        for chunk in chunks:
+            meta = ChunkMetadata(
+                chunk_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                tier=Tier.COLD,
+                original_length=len(chunk.text),
+                compressed_length=None,
+                access_count=0,
+                frequency_score=initial_score,
+                created_at=now,
+                updated_at=now,
+                chunk_index=chunk.index,
+                tags=chunk.tags or [],
+            )
+            metadata_list.append(meta)
+            await self.metadata_store.create_chunk(meta)
+
+        logger.info(
+            "cold_tier_raw_stored",
+            chunk_count=len(chunks),
+            initial_score=initial_score,
+        )
+        return metadata_list
+
     async def retrieve(
         self,
         query_embedding: list[float],
