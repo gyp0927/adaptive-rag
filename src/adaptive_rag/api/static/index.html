@@ -350,6 +350,61 @@
             color: #e2e8f0;
             font-size: 13px;
         }
+        /* 上传进度条 */
+        .upload-progress-container {
+            margin-top: 12px;
+            display: none;
+        }
+        .upload-progress-container.active {
+            display: block;
+        }
+        .upload-progress-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #94a3b8;
+            margin-bottom: 6px;
+        }
+        .upload-progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #0f172a;
+            border-radius: 4px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .upload-progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
+            border-radius: 4px;
+            transition: width 0.2s ease;
+        }
+        .upload-progress-steps {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .upload-step {
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 10px;
+            background: #0f172a;
+            color: #64748b;
+            border: 1px solid #334155;
+            transition: all 0.3s;
+        }
+        .upload-step.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border-color: rgba(59, 130, 246, 0.3);
+        }
+        .upload-step.done {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border-color: rgba(34, 197, 94, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -392,6 +447,24 @@
                     <span id="uploadSpinner" style="display:none" class="loading"></span>
                     <span id="uploadTextBtn">上传文档</span>
                 </button>
+
+                <!-- 上传进度条 -->
+                <div class="upload-progress-container" id="uploadProgressContainer">
+                    <div class="upload-progress-label">
+                        <span id="uploadProgressLabel">准备上传...</span>
+                        <span id="uploadProgressPercent">0%</span>
+                    </div>
+                    <div class="upload-progress-bar">
+                        <div class="upload-progress-fill" id="uploadProgressFill"></div>
+                    </div>
+                    <div class="upload-progress-steps">
+                        <span class="upload-step" id="step-network">📡 网络传输</span>
+                        <span class="upload-step" id="step-parse">📄 文本解析</span>
+                        <span class="upload-step" id="step-chunk">✂️ 分块处理</span>
+                        <span class="upload-step" id="step-embed">🔢 向量化</span>
+                        <span class="upload-step" id="step-store">💾 存储入库</span>
+                    </div>
+                </div>
             </div>
 
             <!-- 查询 -->
@@ -551,6 +624,25 @@
             }
         }
 
+        function setUploadProgress(percent, label) {
+            document.getElementById('uploadProgressFill').style.width = percent + '%';
+            document.getElementById('uploadProgressPercent').textContent = Math.round(percent) + '%';
+            if (label) document.getElementById('uploadProgressLabel').textContent = label;
+        }
+
+        function setUploadStep(stepId, state) {
+            const el = document.getElementById(stepId);
+            el.classList.remove('active', 'done');
+            if (state) el.classList.add(state);
+        }
+
+        function resetUploadProgress() {
+            setUploadProgress(0, '准备上传...');
+            ['step-network', 'step-parse', 'step-chunk', 'step-embed', 'step-store'].forEach(id => {
+                setUploadStep(id, '');
+            });
+        }
+
         async function uploadDocument() {
             const fileInput = document.getElementById('uploadFile');
             const textInput = document.getElementById('uploadText');
@@ -558,6 +650,7 @@
             const btn = document.getElementById('uploadBtn');
             const spinner = document.getElementById('uploadSpinner');
             const btnText = document.getElementById('uploadTextBtn');
+            const progressContainer = document.getElementById('uploadProgressContainer');
 
             let content = '';
             if (textInput.value.trim()) {
@@ -571,19 +664,55 @@
 
             btn.disabled = true;
             spinner.style.display = 'inline-block';
-            btnText.textContent = '上传中...';
+            btnText.textContent = '处理中...';
+            progressContainer.classList.add('active');
+            resetUploadProgress();
+
+            const blob = new Blob([content], { type: 'text/plain' });
+            const formData = new FormData();
+            formData.append('file', blob, 'document.txt');
+            formData.append('title', title);
+
+            // 使用 XMLHttpRequest 获取上传进度
+            const xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    const pct = (e.loaded / e.total) * 100;
+                    setUploadProgress(pct * 0.3, '正在上传...');
+                    setUploadStep('step-network', 'active');
+                }
+            });
+
+            xhr.upload.addEventListener('load', () => {
+                setUploadProgress(30, '网络传输完成，后端处理中...');
+                setUploadStep('step-network', 'done');
+                setUploadStep('step-parse', 'active');
+
+                // 模拟后端处理步骤（因为后端是同步处理，这里用定时器模拟视觉反馈）
+                setTimeout(() => { setUploadStep('step-parse', 'done'); setUploadStep('step-chunk', 'active'); setUploadProgress(50, '分块处理中...'); }, 300);
+                setTimeout(() => { setUploadStep('step-chunk', 'done'); setUploadStep('step-embed', 'active'); setUploadProgress(70, '向量化中...'); }, 600);
+                setTimeout(() => { setUploadStep('step-embed', 'done'); setUploadStep('step-store', 'active'); setUploadProgress(90, '存储入库中...'); }, 900);
+            });
 
             try {
-                const blob = new Blob([content], { type: 'text/plain' });
-                const formData = new FormData();
-                formData.append('file', blob, 'document.txt');
-                formData.append('title', title);
+                const data = await new Promise((resolve, reject) => {
+                    xhr.addEventListener('load', () => {
+                        try {
+                            resolve(JSON.parse(xhr.responseText));
+                        } catch {
+                            reject(new Error('Invalid JSON response'));
+                        }
+                    });
+                    xhr.addEventListener('error', () => reject(new Error('Network error')));
+                    xhr.addEventListener('abort', () => reject(new Error('Upload aborted')));
 
-                const resp = await fetch(`${getApiBase()}/api/v1/documents/upload`, {
-                    method: 'POST',
-                    body: formData,
+                    xhr.open('POST', `${getApiBase()}/api/v1/documents/upload`);
+                    xhr.send(formData);
                 });
-                const data = await resp.json();
+
+                setUploadProgress(100, '完成！');
+                setUploadStep('step-store', 'done');
 
                 if (data.status === 'success') {
                     addLog('success', `文档上传成功: ${title} (${data.chunks_created} chunks)`);
@@ -596,10 +725,14 @@
                 }
             } catch (e) {
                 addLog('error', '上传异常: ' + e.message);
+                setUploadProgress(0, '上传失败');
             } finally {
                 btn.disabled = false;
                 spinner.style.display = 'none';
                 btnText.textContent = '上传文档';
+                setTimeout(() => {
+                    progressContainer.classList.remove('active');
+                }, 1500);
             }
         }
 
