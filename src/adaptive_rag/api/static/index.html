@@ -566,9 +566,9 @@
             <!-- 结果展示 -->
             <div class="panel result-area">
                 <div class="tabs">
-                    <button class="tab active" onclick="switchTab('query')">查询结果</button>
-                    <button class="tab" onclick="switchTab('upload')">上传记录</button>
-                    <button class="tab" onclick="switchTab('log')">系统日志</button>
+                    <button class="tab active" onclick="switchTab('query', this)">查询结果</button>
+                    <button class="tab" onclick="switchTab('upload', this)">上传记录</button>
+                    <button class="tab" onclick="switchTab('log', this)">系统日志</button>
                 </div>
 
                 <!-- 查询结果 -->
@@ -739,13 +739,14 @@
 
                 if (data.status === 'success') {
                     addLog('success', `文档上传成功: ${title} (${data.chunks_created} chunks)`);
-                    appendUploadResult(data, title);
                     textInput.value = '';
                     fileInput.value = '';
                     document.getElementById('uploadTitle').value = '';
                 } else {
-                    addLog('error', '上传失败: ' + (data.error || '未知错误'));
+                    addLog('error', '上传失败: ' + (data.error || data.message || '未知错误'));
                 }
+                // 无论成功失败都刷新列表
+                appendUploadResult(data, title);
             } catch (e) {
                 addLog('error', '上传异常: ' + e.message);
                 setUploadProgress(0, '上传失败');
@@ -936,9 +937,11 @@
         }
 
         function appendUploadResult(data, title) {
-            // 上传成功后刷新完整列表（从后端拉取，确保数据准确）
+            // 上传完成后刷新完整列表（从后端拉取，确保数据准确）
             loadDocumentList();
-            switchTab('upload');
+            // 切换到上传记录标签页（高亮第二个 tab）
+            const tabs = document.querySelectorAll('.tab');
+            switchTab('upload', tabs[1]);
         }
 
         async function performQuery() {
@@ -1097,10 +1100,17 @@
             }
         }
 
-        function switchTab(name) {
+        function switchTab(name, clickedTab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            event.target.classList.add('active');
+            if (clickedTab) clickedTab.classList.add('active');
+            else {
+                // 默认激活第一个匹配的 tab
+                const tabs = document.querySelectorAll('.tab');
+                if (name === 'query' && tabs[0]) tabs[0].classList.add('active');
+                if (name === 'upload' && tabs[1]) tabs[1].classList.add('active');
+                if (name === 'log' && tabs[2]) tabs[2].classList.add('active');
+            }
             document.getElementById('tab-' + name).classList.add('active');
         }
 
