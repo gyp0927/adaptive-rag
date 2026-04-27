@@ -200,3 +200,23 @@ async def get_document(document_id: str) -> DocumentDetailResponse:
         updated_at=doc.updated_at.isoformat() if doc.updated_at else "",
         chunks=chunk_contents,
     )
+
+
+@router.delete("/{document_id}")
+async def delete_document(document_id: str) -> dict:
+    """Delete a document and all its chunks."""
+    if not _pipeline:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+
+    import uuid as uuid_mod
+    try:
+        doc_uuid = uuid_mod.UUID(document_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid document ID format")
+
+    try:
+        deleted = await _pipeline.delete_document(doc_uuid)
+        return {"success": True, "deleted_chunks": deleted}
+    except Exception as e:
+        logger.error("delete_error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

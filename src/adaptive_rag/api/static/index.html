@@ -350,6 +350,20 @@
             color: #e2e8f0;
             font-size: 13px;
         }
+        .btn-delete {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            opacity: 0.5;
+            transition: all 0.2s;
+        }
+        .btn-delete:hover {
+            opacity: 1;
+            background: rgba(239, 68, 68, 0.15);
+        }
         /* 上传进度条 */
         .upload-progress-container {
             margin-top: 12px;
@@ -783,7 +797,10 @@
             card.innerHTML = `
                 <div class="chunk-header">
                     <span style="font-weight:600;color:#e2e8f0;">${escapeHtml(doc.title || doc.source_uri || '未命名')}</span>
-                    <span class="chunk-tier tier-hot" style="font-size:11px;">${doc.total_chunks || 0} chunks</span>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <span class="chunk-tier tier-hot" style="font-size:11px;">${doc.total_chunks || 0} chunks</span>
+                        <button class="btn-delete" title="删除文档" onclick="event.stopPropagation(); deleteDocument('${doc.document_id}', this);">🗑️</button>
+                    </div>
                 </div>
                 <div class="chunk-meta">
                     <span>ID: ${doc.document_id.slice(0, 8)}...</span>
@@ -796,11 +813,36 @@
             `;
 
             card.addEventListener('click', (e) => {
-                // 防止点击详情内容时重复触发
-                if (e.target.closest('.doc-detail')) return;
+                // 防止点击详情内容或删除按钮时重复触发
+                if (e.target.closest('.doc-detail') || e.target.closest('.btn-delete')) return;
                 toggleDocumentDetail(card, doc.document_id);
             });
             return card;
+        }
+
+        async function deleteDocument(docId, btnEl) {
+            if (!confirm('确定要删除这个文档吗？所有 chunks 也会被删除。')) return;
+
+            const card = btnEl.closest('.chunk-card');
+            btnEl.textContent = '⏳';
+            btnEl.disabled = true;
+
+            try {
+                const resp = await fetch(`${getApiBase()}/api/v1/documents/${docId}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (resp.ok && data.success) {
+                    addLog('success', `文档已删除: ${docId.slice(0, 8)}... (${data.deleted_chunks} chunks)`);
+                    card.style.opacity = '0';
+                    card.style.transform = 'translateX(20px)';
+                    setTimeout(() => card.remove(), 300);
+                } else {
+                    throw new Error(data.detail || '删除失败');
+                }
+            } catch (e) {
+                addLog('error', '删除失败: ' + e.message);
+                btnEl.textContent = '🗑️';
+                btnEl.disabled = false;
+            }
         }
 
         async function toggleDocumentDetail(card, docId) {
