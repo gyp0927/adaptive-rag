@@ -117,6 +117,39 @@ class FrequencyTracker:
             access_count=cluster.access_count,
         )
 
+    async def get_topic_frequencies_batch(
+        self,
+        query_embeddings: list[list[float]],
+    ) -> list[float]:
+        """Get topic frequencies for multiple embeddings in one batch.
+
+        Uses search_batch under the hood to cut vector-store round-trips
+        from N to 1 when checking many chunks (e.g. during ingestion).
+
+        Args:
+            query_embeddings: List of query embedding vectors.
+
+        Returns:
+            List of frequency scores, same order as input.
+        """
+        if not query_embeddings:
+            return []
+
+        clusters = await self.cluster_store.find_nearest_clusters_batch(
+            query_embeddings,
+        )
+
+        return [
+            self.decay_engine.apply_decay(
+                base_score=c.frequency_score,
+                last_accessed=c.last_accessed_at,
+                access_count=c.access_count,
+            )
+            if c
+            else 0.0
+            for c in clusters
+        ]
+
     async def _get_or_create_cluster(
         self,
         query_text: str,

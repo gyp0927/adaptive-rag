@@ -135,11 +135,10 @@ class IngestionPipeline:
             embeddings = await self.embedder.embed_batch(texts)
 
             # 5. Classify each chunk by historical topic frequency and route
-            # Parallelise: N sequential vector-store round-trips -> 1 batch
-            topic_freqs = await asyncio.gather(*[
-                self.frequency_tracker.get_topic_frequency(emb)
-                for emb in embeddings
-            ])
+            # Batch: N vector-store round-trips -> 1 search_batch request
+            topic_freqs = await self.frequency_tracker.get_topic_frequencies_batch(
+                embeddings
+            )
 
             hot_chunks: list[Chunk] = []
             hot_embeddings: list[list[float]] = []

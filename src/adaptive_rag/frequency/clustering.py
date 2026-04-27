@@ -1,5 +1,6 @@
 """Semantic query clustering for topic-based frequency tracking."""
 
+import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 import uuid
@@ -67,6 +68,54 @@ class QueryClusterStore:
             return None
 
         return await self.metadata_store.get_cluster(cluster_id)
+
+    async def find_nearest_clusters_batch(
+        self,
+        query_embeddings: list[list[float]],
+        threshold: float | None = None,
+    ) -> list[QueryCluster | None]:
+        """Find the nearest cluster for multiple embeddings in one batch request.
+
+        Uses vector_store.search_batch to reduce round-trips when checking
+        topic frequency for many chunks at once (e.g. during ingestion).
+
+        Args:
+            query_embeddings: List of embedding vectors.
+            threshold: Minimum cosine similarity (default from config).
+
+        Returns:
+            List of nearest clusters (or None), in the same order as input.
+        """
+        if not query_embeddings:
+            return []
+
+        threshold = threshold or self.settings.QUERY_CLUSTERING_THRESHOLD
+
+        batch_results = await self.vector_store.search_batch(
+            collection=self.collection,
+            query_vectors=query_embeddings,
+            limit=1,
+        )
+
+        # Collect all cluster IDs that passed the threshold
+        cluster_ids: list[uuid.UUID | None] = []
+        for results in batch_results:
+            if not results or results[0].score < threshold:
+                cluster_ids.append(None)
+                continue
+            cid = uuid.UUID(results[0].payload.get("cluster_id")) if results[0].payload else None
+            cluster_ids.append(cid)
+
+        # Fetch all clusters in parallel (typically very few unique IDs)
+        unique_ids = {cid for cid in cluster_ids if cid is not None}
+        cluster_map: dict[uuid.UUID, QueryCluster | None] = {}
+        if unique_ids:
+            clusters = await asyncio.gather(*[
+                self.metadata_store.get_cluster(cid) for cid in unique_ids
+            ])
+            cluster_map = {cid: c for cid, c in zip(unique_ids, clusters)}
+
+        return [cluster_map.get(cid) for cid in cluster_ids]
 
     async def create_cluster(self, cluster: QueryCluster) -> None:
         """Create a new query cluster.

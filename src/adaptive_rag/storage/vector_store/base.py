@@ -47,6 +47,19 @@ class BaseVectorStore(ABC):
         pass
 
     @abstractmethod
+    async def search_batch(
+        self,
+        collection: str,
+        query_vectors: list[list[float]],
+        limit: int = 1,
+    ) -> list[list[VectorSearchResult]]:
+        """Batch search for multiple query vectors.
+
+        Returns one result list per query vector, in the same order.
+        """
+        pass
+
+    @abstractmethod
     async def delete(
         self,
         collection: str,
