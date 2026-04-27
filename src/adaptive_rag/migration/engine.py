@@ -149,12 +149,12 @@ class MigrationEngine:
             # Phase 3: Execute cold -> hot migrations
             semaphore = asyncio.Semaphore(self.policy.thresholds.max_concurrent)
 
-            async def migrate_cold_to_hot(chunk_id: uuid.UUID) -> MigrationResult:
+            async def _migrate_one_cold_to_hot(chunk_id: uuid.UUID) -> MigrationResult:
                 async with semaphore:
                     return await self._migrate_cold_to_hot(chunk_id)
 
             cold_results = await asyncio.gather(*[
-                migrate_cold_to_hot(cid) for cid in cold_candidates
+                _migrate_one_cold_to_hot(cid) for cid in cold_candidates
             ], return_exceptions=True)
 
             for result in cold_results:

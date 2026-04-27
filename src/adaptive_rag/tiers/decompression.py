@@ -62,8 +62,14 @@ Expanded response:
         self.settings = get_settings()
         self.client = LLMClient()
         self.model = self.settings.DECOMPRESSION_MODEL
-        self.embedder = embedder
+        self._embedder = embedder
         self._flagged_chunk_ids: set[str] = set()
+
+    def _get_embedder(self) -> Embedder:
+        """Lazy-load embedder to avoid repeated instantiation."""
+        if self._embedder is None:
+            self._embedder = Embedder()
+        return self._embedder
 
     async def decompress(self, summary: str) -> str:
         """Decompress a summary back to full detail.
@@ -120,7 +126,7 @@ Expanded response:
             DecompressionResult with text, relevance score, and flag status.
         """
         threshold = threshold if threshold is not None else self.DEFAULT_RELEVANCE_THRESHOLD
-        embedder = self.embedder or Embedder()
+        embedder = self._get_embedder()
 
         decompressed = await self.decompress(compressed)
 

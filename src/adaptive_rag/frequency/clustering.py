@@ -289,7 +289,14 @@ class QueryClusterStore:
         sub_clusters: list[QueryCluster] = []
         for i in range(n_sub):
             sub_members = members[labels == i]
-            sub_centroid = kmeans.cluster_centers_[i].tolist()
+            sub_centroid_raw = kmeans.cluster_centers_[i]
+            # Normalise to unit length so Qdrant cosine search is consistent
+            norm = np.linalg.norm(sub_centroid_raw)
+            sub_centroid = (
+                (sub_centroid_raw / norm).tolist()
+                if norm > 0
+                else sub_centroid_raw.tolist()
+            )
             sub_count = len(sub_members)
 
             sub_cluster = QueryCluster(

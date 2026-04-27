@@ -88,20 +88,23 @@ async def initialize_services() -> dict:
         embedder=embedder,
     )
 
-    # Ingestion
-    pipeline = IngestionPipeline(
-        metadata_store=metadata_store,
-        hot_tier=hot_tier,
-        embedder=embedder,
-        chunker=RecursiveChunker(),
-    )
-
-    # Migration
+    # Migration (must be created before ingestion pipeline)
     migration_engine = MigrationEngine(
         hot_tier=hot_tier,
         cold_tier=cold_tier,
         metadata_store=metadata_store,
         embedder=embedder,
+    )
+
+    # Ingestion
+    pipeline = IngestionPipeline(
+        metadata_store=metadata_store,
+        hot_tier=hot_tier,
+        cold_tier=cold_tier,
+        embedder=embedder,
+        frequency_tracker=frequency_tracker,
+        chunker=RecursiveChunker(),
+        migration_engine=migration_engine,
     )
 
     return {
