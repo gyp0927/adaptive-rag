@@ -35,7 +35,7 @@ echo.
 echo 按 Ctrl+C 停止服务
 echo.
 
-REM 启动 uvicorn（带自动重载，开发模式）
-python -m uvicorn adaptive_rag.api.main:app --host 127.0.0.1 --port 8000 --reload
+REM 启动 uvicorn（开发模式，Windows 下 --reload 不稳定，手动重启即可）
+python -m uvicorn adaptive_rag.api.main:app --host 127.0.0.1 --port 8000
 
 pause
