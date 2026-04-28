@@ -40,7 +40,7 @@ class DecayEngine:
         decay_factor = math.exp(-self.decay_constant * elapsed)
 
         # Score decays but never below a minimum based on total accesses
-        min_score = math.log1p(access_count) / 10.0
+        min_score = math.log1p(access_count) / 6.0
 
         return max(base_score * decay_factor, min_score)
 

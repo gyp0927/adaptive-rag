@@ -93,11 +93,11 @@ class Settings(BaseSettings):
 
     # Tier Configuration
     COLD_TIER_COMPRESSION_RATIO: float = 0.2
-    HOT_TO_COLD_THRESHOLD: float = 0.3
+    HOT_TO_COLD_THRESHOLD: float = 0.25
     COLD_TO_HOT_THRESHOLD: float = 0.7
 
     # Frequency Tracking
-    DECAY_HALF_LIFE_HOURS: float = 24.0
+    DECAY_HALF_LIFE_HOURS: float = 72.0
     QUERY_CLUSTERING_THRESHOLD: float = 0.85
     MIN_CLUSTER_SIZE: int = 3
 

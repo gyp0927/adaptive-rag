@@ -43,7 +43,7 @@ class TestDecayEngine:
         # After 2 half-lives, should be around 0.25
         assert score < 0.5
         # But never below minimum
-        assert score >= math.log1p(1) / 10.0
+        assert score >= math.log1p(1) / 6.0
 
     def test_compute_score_new_chunk(self):
         """New chunk with no accesses should have low score."""
