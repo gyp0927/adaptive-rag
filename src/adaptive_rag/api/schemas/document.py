@@ -8,6 +8,7 @@ import uuid
 class DocumentUploadRequest(BaseModel):
     """Document upload request."""
 
+    text: str = Field(..., min_length=1, max_length=1000000)
     chunking_strategy: Literal["fixed", "recursive"] = "recursive"
     chunk_size: int = Field(default=512, ge=100, le=4096)
     chunk_overlap: int = Field(default=50, ge=0, le=500)

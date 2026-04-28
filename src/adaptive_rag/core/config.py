@@ -122,6 +122,14 @@ class Settings(BaseSettings):
     DECOMPRESSION_MODEL: str = "gpt-4o"
     LLM_MAX_TOKENS: int = 4096
     LLM_TEMPERATURE: float = 0.0
+    LLM_TIMEOUT_SECONDS: float = 60.0
+
+    # Upload
+    MAX_UPLOAD_SIZE_BYTES: int = 50 * 1024 * 1024  # 50 MB
+
+    # Tier capacity
+    HOT_TIER_CAPACITY: int = 10000
+    HOT_TIER_EVICT_PERCENT: float = 0.1
 
     # Monitoring
     METRICS_PORT: int = 9090

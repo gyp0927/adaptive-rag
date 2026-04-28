@@ -64,7 +64,17 @@ services:
       - CACHE_URL=redis://redis:6379/0
       - DOCUMENT_STORE_TYPE=local
       - DOCUMENT_STORE_PATH=/app/data/documents
-      - LLM_API_KEY=${OPENAI_API_KEY}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.openai.com/v1}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - COMPRESSION_MODEL=${COMPRESSION_MODEL:-gpt-4o-mini}
+      - DECOMPRESSION_MODEL=${DECOMPRESSION_MODEL:-gpt-4o}
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      - MIGRATION_INTERVAL_MINUTES=${MIGRATION_INTERVAL_MINUTES:-60}
+      - HOT_TIER_CAPACITY=${HOT_TIER_CAPACITY:-10000}
+      - HOT_TIER_EVICT_PERCENT=${HOT_TIER_EVICT_PERCENT:-0.1}
+      - MAX_UPLOAD_SIZE_BYTES=${MAX_UPLOAD_SIZE_BYTES:-52428800}
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-60}
     volumes:
       - document_store:/app/data/documents
     depends_on:

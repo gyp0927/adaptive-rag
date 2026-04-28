@@ -58,10 +58,10 @@ class IngestionPipeline:
     # Threshold above which a topic is considered "hot" at ingestion time.
     HOT_TOPIC_THRESHOLD: float = 0.5
 
-    # Hard cap on hot tier chunks. When exceeded, the coldest ``EVICT_PERCENT``
-    # of hot chunks are pushed to cold tier.
-    HOT_TIER_CAPACITY: int = 10000
-    EVICT_PERCENT: float = 0.1
+    # Hard cap on hot tier chunks. When exceeded, the coldest evict percent
+    # of hot chunks are pushed to cold tier. Values come from settings.
+    hot_tier_capacity: int = 10000
+    evict_percent: float = 0.1
 
     def __init__(
         self,
@@ -92,6 +92,8 @@ class IngestionPipeline:
                 chunk_size=self.settings.CHUNK_SIZE,
                 chunk_overlap=self.settings.CHUNK_OVERLAP,
             )
+        self.hot_tier_capacity = self.settings.HOT_TIER_CAPACITY
+        self.evict_percent = self.settings.HOT_TIER_EVICT_PERCENT
         self.migration_engine = migration_engine
 
     async def ingest_text(
@@ -285,22 +287,22 @@ class IngestionPipeline:
         """If hot tier exceeds capacity, evict the coldest chunks to cold tier."""
         try:
             hot_count = await self.metadata_store.count_chunks_by_tier(tier=Tier.HOT)
-            if hot_count > self.HOT_TIER_CAPACITY:
+            if hot_count > self.hot_tier_capacity:
                 if self.migration_engine is not None:
                     evicted = await self.migration_engine.evict_coldest(
-                        percent=self.EVICT_PERCENT
+                        percent=self.evict_percent
                     )
                     logger.warning(
                         "hot_tier_capacity_exceeded",
                         hot_count=hot_count,
-                        capacity=self.HOT_TIER_CAPACITY,
+                        capacity=self.hot_tier_capacity,
                         evicted=len(evicted),
                     )
                 else:
                     logger.warning(
                         "hot_tier_capacity_exceeded_no_migration_engine",
                         hot_count=hot_count,
-                        capacity=self.HOT_TIER_CAPACITY,
+                        capacity=self.hot_tier_capacity,
                     )
         except Exception as e:
             logger.error("hot_tier_capacity_check_failed", error=str(e))

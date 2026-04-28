@@ -39,6 +39,7 @@ class LLMClient:
             self._openai_client = openai.AsyncOpenAI(
                 api_key=self.settings.LLM_API_KEY,
                 base_url=self.settings.LLM_BASE_URL,
+                timeout=self.settings.LLM_TIMEOUT_SECONDS,
             )
         return self._openai_client
 
@@ -53,6 +54,7 @@ class LLMClient:
             self._anthropic_client = anthropic.AsyncAnthropic(
                 api_key=self.settings.LLM_API_KEY,
                 base_url=base_url,
+                timeout=self.settings.LLM_TIMEOUT_SECONDS,
             )
         return self._anthropic_client
 

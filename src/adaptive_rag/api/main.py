@@ -13,6 +13,7 @@ from adaptive_rag.core.logging import setup_logging, get_logger
 from adaptive_rag.ingestion.embedder import Embedder
 from adaptive_rag.ingestion.pipeline import IngestionPipeline
 from adaptive_rag.storage.cache.memory_cache import MemoryCache
+from adaptive_rag.storage.cache.redis_cache import RedisCache
 from adaptive_rag.storage.document_store.local_store import LocalDocumentStore
 from adaptive_rag.storage.metadata_store.postgres_store import PostgresMetadataStore
 from adaptive_rag.storage.vector_store.local_qdrant_store import LocalQdrantStore
@@ -47,7 +48,15 @@ async def initialize_services() -> dict:
     await metadata_store.initialize()
 
     document_store = LocalDocumentStore()
-    cache = MemoryCache()
+
+    # Cache layer
+    if settings.CACHE_URL:
+        cache = RedisCache()
+        await cache.initialize()
+        logger.info("cache_initialized", type="redis", url=settings.CACHE_URL)
+    else:
+        cache = MemoryCache()
+        logger.info("cache_initialized", type="memory")
 
     # Embedding
     embedder = Embedder()
@@ -139,6 +148,8 @@ async def lifespan(app: FastAPI):
     documents.set_pipeline(_services["pipeline"])
     documents.set_stores(_services["metadata_store"], _services["document_store"])
     admin.set_migration_engine(_services["migration_engine"])
+    admin.set_metadata_store(_services["metadata_store"])
+    health.set_stores(_services["metadata_store"], _services["vector_store"])
 
     # Start background migration scheduler
     scheduler = _services["migration_scheduler"]

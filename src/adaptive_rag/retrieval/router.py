@@ -1,6 +1,7 @@
 """Frequency-driven query router."""
 
 import asyncio
+import weakref
 from dataclasses import dataclass
 from typing import Any
 import uuid
@@ -28,6 +29,10 @@ class RetrievalResult:
     cold_results_count: int
     total_latency_ms: float
     topic_frequency: float
+
+
+# Keep references to fire-and-forget background tasks to prevent GC
+_background_tasks: weakref.WeakSet = weakref.WeakSet()
 
 
 class FrequencyRouter:
@@ -156,13 +161,14 @@ class FrequencyRouter:
         )
 
         # Record access async (fire-and-forget, exceptions swallowed)
-        asyncio.create_task(
+        task = asyncio.create_task(
             self._record_access_safe(
                 chunk_ids=[c.chunk_id for c in merged],
                 query_text=query_text,
                 query_embedding=query_embedding,
             )
         )
+        _background_tasks.add(task)
 
         elapsed_ms = (time.time() - start_time) * 1000
 

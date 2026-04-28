@@ -99,6 +99,12 @@ async def upload_document(
 
     try:
         content = await file.read()
+        max_size = _pipeline.settings.MAX_UPLOAD_SIZE_BYTES if _pipeline else 50 * 1024 * 1024
+        if len(content) > max_size:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large: {len(content)} bytes. Maximum: {max_size} bytes",
+            )
         logger.info(
             "upload_received",
             filename=file.filename,
@@ -172,7 +178,31 @@ async def extract_test(
 @router.post("/text", response_model=DocumentUploadResponse)
 async def upload_text(request: DocumentUploadRequest) -> DocumentUploadResponse:
     """Upload text content directly."""
-    raise HTTPException(status_code=501, detail="Direct text upload not yet implemented")
+    if not _pipeline:
+        raise HTTPException(status_code=503, detail="Pipeline not initialized")
+
+    try:
+        result = await _pipeline.ingest_text(
+            text=request.text,
+            source_uri="inline",
+            title=request.title,
+            tags=request.tags,
+            metadata=request.metadata,
+        )
+        return DocumentUploadResponse(
+            document_id=result.document_id,
+            status=result.status,
+            chunks_created=result.chunks_created,
+            message=result.message or (
+                "Document ingested successfully" if result.status == "success"
+                else result.error or "Failed"
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("text_upload_error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("", response_model=DocumentListResponse)
