@@ -132,6 +132,18 @@ class BaseMetadataStore(ABC):
         pass
 
     @abstractmethod
+    async def update_chunks_batch(
+        self,
+        updates: dict[uuid.UUID, dict[str, Any]],
+    ) -> None:
+        """Update multiple chunks in a single transaction.
+
+        Args:
+            updates: Mapping from chunk_id to update dict.
+        """
+        pass
+
+    @abstractmethod
     async def delete_chunks(self, chunk_ids: list[uuid.UUID]) -> int:
         """Delete chunks. Returns count deleted."""
         pass
@@ -171,6 +183,11 @@ class BaseMetadataStore(ABC):
     @abstractmethod
     async def get_document(self, document_id: uuid.UUID) -> DocumentMetadata | None:
         """Get document by ID."""
+        pass
+
+    @abstractmethod
+    async def get_document_by_hash(self, content_hash: str) -> DocumentMetadata | None:
+        """Get document by content hash (for deduplication)."""
         pass
 
     @abstractmethod

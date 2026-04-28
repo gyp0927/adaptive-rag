@@ -69,16 +69,14 @@ class ResultRanker:
         all_results.sort(key=lambda r: r.score, reverse=True)
 
         # Remove duplicates (same chunk might appear in both tiers)
+        # Build an index for O(1) lookup instead of O(n) scan
+        original_by_id = {r.chunk_id: r for r in hot_results + cold_results}
         seen: set = set()
         deduped = []
         for r in all_results:
             if r.chunk_id not in seen:
                 seen.add(r.chunk_id)
                 # Restore original score from the actual result
-                original = next(
-                    (x for x in (hot_results + cold_results) if x.chunk_id == r.chunk_id),
-                    r,
-                )
-                deduped.append(original)
+                deduped.append(original_by_id.get(r.chunk_id, r))
 
         return deduped[:top_k]

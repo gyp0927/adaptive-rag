@@ -58,11 +58,11 @@ class LocalQdrantStore(BaseVectorStore):
             QdrantClient,
             path=self._path,
         )
-        await self._ensure_collection(self.settings.VECTOR_DB_COLLECTION)
-        await self._ensure_collection("query_clusters")
+        await self.ensure_collection(self.settings.VECTOR_DB_COLLECTION)
+        await self.ensure_collection("query_clusters")
         logger.info("local_qdrant_initialized", path=self._path)
 
-    async def _ensure_collection(self, name: str) -> None:
+    async def ensure_collection(self, name: str) -> None:
         """Create collection if it doesn't exist."""
         if not self.client:
             raise VectorStoreError("Client not initialized")

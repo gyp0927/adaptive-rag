@@ -28,9 +28,10 @@ async def query(request: QueryRequest) -> QueryResponse:
         raise HTTPException(status_code=503, detail="Retriever not initialized")
 
     try:
-        # Map tier preference
+        # Map tier preference. "both" is not a valid Tier enum value;
+        # passing None lets the router use BOTH automatically.
         tier = None
-        if request.tier:
+        if request.tier and request.tier != "both":
             tier = Tier(request.tier)
 
         result = await _retriever.query(

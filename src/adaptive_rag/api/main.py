@@ -40,7 +40,7 @@ async def initialize_services() -> dict:
     vector_store = LocalQdrantStore()
     await vector_store.initialize()
     # Ensure cold tier collection exists
-    await vector_store._ensure_collection(f"{settings.VECTOR_DB_COLLECTION}_cold")
+    await vector_store.ensure_collection(f"{settings.VECTOR_DB_COLLECTION}_cold")
 
     metadata_store = PostgresMetadataStore()
     await metadata_store.initialize()

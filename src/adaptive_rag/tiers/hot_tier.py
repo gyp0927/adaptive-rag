@@ -25,7 +25,7 @@ class HotTier(BaseTier):
     """Hot tier stores full original text with dense embeddings.
 
     Optimized for low-latency retrieval of frequently accessed content.
-    New documents are always placed in the hot tier.
+    Chunks with high topic frequency are routed here by the ingestion pipeline.
     """
 
     def __init__(

@@ -195,35 +195,56 @@ class FrequencyTracker:
     ) -> None:
         """Recalculate frequency scores for affected chunks.
 
+        Batch-optimized: fetches all chunk metadata and needed clusters
+        in two queries, then applies updates in a single transaction.
+
         Args:
             chunk_ids: Chunks to update.
             timestamp: Current timestamp.
         """
+        if not chunk_ids:
+            return
+
+        # 1. Batch fetch all chunk metadata
+        metadatas = await self.metadata_store.get_chunks_batch(chunk_ids)
+        meta_by_id = {m.chunk_id: m for m in metadatas}
+
+        # 2. Collect unique cluster IDs
+        cluster_ids = {
+            m.topic_cluster_id for m in metadatas if m.topic_cluster_id
+        }
+
+        # 3. Batch fetch all needed clusters
+        cluster_scores: dict[uuid.UUID, float] = {}
+        if cluster_ids:
+            # get_all_clusters is the only batch cluster API available;
+            # filter locally to avoid N+1.
+            all_clusters = await self.metadata_store.get_all_clusters()
+            cluster_scores = {
+                c.cluster_id: c.frequency_score
+                for c in all_clusters
+                if c.cluster_id in cluster_ids
+            }
+
+        # 4. Compute new scores and build batch update
+        batch_updates: dict[uuid.UUID, dict[str, Any]] = {}
         for chunk_id in chunk_ids:
-            metadata = await self.metadata_store.get_chunk(chunk_id)
+            metadata = meta_by_id.get(chunk_id)
             if not metadata:
                 continue
 
-            # Get cluster score if chunk has a cluster
-            cluster_score = 0.0
-            if metadata.topic_cluster_id:
-                cluster = await self.metadata_store.get_cluster(
-                    metadata.topic_cluster_id
-                )
-                if cluster:
-                    cluster_score = cluster.frequency_score
-
+            cluster_score = cluster_scores.get(metadata.topic_cluster_id, 0.0)
             new_score = self.decay_engine.compute_score(
                 access_count=metadata.access_count,
                 last_accessed=metadata.last_accessed_at,
                 created_at=metadata.created_at,
                 cluster_score=cluster_score,
             )
+            batch_updates[chunk_id] = {
+                "frequency_score": new_score,
+                "updated_at": timestamp,
+            }
 
-            await self.metadata_store.update_chunk(
-                chunk_id=chunk_id,
-                updates={
-                    "frequency_score": new_score,
-                    "updated_at": timestamp,
-                },
-            )
+        # 5. Single transaction update
+        if batch_updates:
+            await self.metadata_store.update_chunks_batch(batch_updates)

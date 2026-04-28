@@ -209,6 +209,26 @@ class PostgresMetadataStore(BaseMetadataStore):
             model = result.scalar_one_or_none()
             return _chunk_to_metadata(model) if model else None
 
+    async def update_chunks_batch(
+        self,
+        updates: dict[uuid.UUID, dict[str, Any]],
+    ) -> None:
+        """Update multiple chunks in a single transaction."""
+        if not updates:
+            return
+        async with self.async_session() as session:
+            for chunk_id, chunk_updates in updates.items():
+                upd = dict(chunk_updates)
+                if "tier" in upd and isinstance(upd["tier"], Tier):
+                    upd["tier"] = upd["tier"].value
+                upd["updated_at"] = datetime.utcnow()
+                await session.execute(
+                    update(ChunkModel)
+                    .where(ChunkModel.chunk_id == _to_uuid_str(chunk_id))
+                    .values(**upd)
+                )
+            await session.commit()
+
     async def delete_chunks(self, chunk_ids: list[uuid.UUID]) -> int:
         """Delete chunks."""
         id_strs = [_to_uuid_str(cid) for cid in chunk_ids]
@@ -297,6 +317,15 @@ class PostgresMetadataStore(BaseMetadataStore):
         async with self.async_session() as session:
             result = await session.execute(
                 select(DocumentModel).where(DocumentModel.document_id == _to_uuid_str(document_id))
+            )
+            model = result.scalar_one_or_none()
+            return _document_to_metadata(model) if model else None
+
+    async def get_document_by_hash(self, content_hash: str) -> DocumentMetadata | None:
+        """Get document by content hash (for deduplication)."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(DocumentModel).where(DocumentModel.content_hash == content_hash)
             )
             model = result.scalar_one_or_none()
             return _document_to_metadata(model) if model else None

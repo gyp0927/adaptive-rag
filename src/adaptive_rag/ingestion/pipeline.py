@@ -117,8 +117,22 @@ class IngestionPipeline:
         document_id = uuid.uuid4()
 
         try:
-            # 1. Compute content hash for deduplication
+            # 1. Compute content hash and check for duplicates
             content_hash = hashlib.sha256(text.encode()).hexdigest()
+            existing = await self.metadata_store.get_document_by_hash(content_hash)
+            if existing:
+                logger.info(
+                    "ingestion_duplicate_detected",
+                    document_id=str(existing.document_id),
+                    source_uri=source_uri,
+                )
+                return IngestionResult(
+                    document_id=existing.document_id,
+                    status="duplicate",
+                    chunks_created=existing.total_chunks,
+                    total_chunks=existing.total_chunks,
+                    message="Document already exists (same content hash)",
+                )
 
             # 2. Store document metadata
             doc_meta = DocumentMetadata(
@@ -209,13 +223,11 @@ class IngestionPipeline:
                     document_id=str(document_id),
                     stored=len(hot_meta),
                 )
-                await asyncio.gather(*[
-                    self.metadata_store.update_chunk(
-                        chunk_id=chunk.chunk_id,
-                        updates={"frequency_score": 0.6},
-                    )
+                # Batch update frequency scores
+                await self.metadata_store.update_chunks_batch({
+                    chunk.chunk_id: {"frequency_score": 0.6}
                     for chunk in hot_chunks
-                ])
+                })
 
             # 7. Store cold chunks as raw (skip LLM compression)
             if cold_chunks:
