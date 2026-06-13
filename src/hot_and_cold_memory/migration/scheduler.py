@@ -1,10 +1,12 @@
 """Migration scheduler using APScheduler."""
 
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # type: ignore[import-untyped]
+from apscheduler.triggers.cron import CronTrigger  # type: ignore[import-untyped]
+from apscheduler.triggers.interval import IntervalTrigger  # type: ignore[import-untyped]
 
 from hot_and_cold_memory.core.config import get_settings
 from hot_and_cold_memory.core.logging import get_logger
@@ -20,17 +22,20 @@ class MigrationScheduler:
         self.scheduler = AsyncIOScheduler()
         self._migration_job = None
         self._cluster_cleanup_job = None
+        self._profile_reconcile_job = None
 
     def start(
         self,
-        migration_callback,
-        cluster_cleanup_callback=None,
+        migration_callback: Callable[[], Awaitable[Any]],
+        cluster_cleanup_callback: Callable[[], Awaitable[Any]] | None = None,
+        profile_reconcile_callback: Callable[[], Awaitable[Any]] | None = None,
     ) -> None:
         """Start the migration scheduler.
 
         Args:
             migration_callback: Async function to call for migration.
             cluster_cleanup_callback: Optional async function to clean up stale clusters.
+            profile_reconcile_callback: Optional async function to reconcile profile summaries.
         """
         self._migration_job = self.scheduler.add_job(
             migration_callback,
@@ -50,6 +55,15 @@ class MigrationScheduler:
                 replace_existing=True,
             )
             logger.info("cluster_cleanup_scheduled", hour=3)
+        if profile_reconcile_callback is not None:
+            self._profile_reconcile_job = self.scheduler.add_job(
+                profile_reconcile_callback,
+                trigger=CronTrigger.from_crontab(self.settings.PROFILE_RECONCILER_CRON),
+                id="profile_reconcile",
+                name="Profile Reconciliation",
+                replace_existing=True,
+            )
+            logger.info("profile_reconcile_scheduled", cron=self.settings.PROFILE_RECONCILER_CRON)
 
         self.scheduler.start()
         logger.info(
@@ -59,10 +73,10 @@ class MigrationScheduler:
 
     def stop(self) -> None:
         """Stop the scheduler."""
-        self.scheduler.shutdown()
+        self.scheduler.shutdown(wait=True)
         logger.info("migration_scheduler_stopped")
 
     async def trigger_now(self) -> None:
         """Trigger migration immediately."""
         if self._migration_job:
-            self._migration_job.modify(next_run_time=datetime.now(timezone.utc))
+            self._migration_job.modify(next_run_time=datetime.now(UTC))

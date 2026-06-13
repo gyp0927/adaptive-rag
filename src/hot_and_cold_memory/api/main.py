@@ -169,11 +169,16 @@ async def lifespan(app: FastAPI) -> Any:
     health.set_stores(_services["metadata_store"], _services["vector_store"])
     profile.set_profile_store(_services["profile_store"])
 
+    # Profile reconciler
+    from hot_and_cold_memory.profile.reconciler import ProfileReconciler
+    profile_reconciler = ProfileReconciler(_services["profile_store"])
+
     # Start background migration scheduler
     scheduler = _services["migration_scheduler"]
     scheduler.start(
         migration_callback=_services["migration_engine"].run_migration_cycle,
         cluster_cleanup_callback=_services["frequency_tracker"].cluster_store.cleanup_stale_clusters,
+        profile_reconcile_callback=lambda: profile_reconciler.reconcile("default"),
     )
 
     logger.info("services_initialized")
