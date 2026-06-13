@@ -1,6 +1,7 @@
 """FastAPI application factory for Adaptive Memory."""
 
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,15 +26,15 @@ from hot_and_cold_memory.tiers.cold_tier import ColdTier
 from hot_and_cold_memory.tiers.compression import CompressionEngine
 from hot_and_cold_memory.tiers.hot_tier import HotTier
 
-from .routers import admin, health, memories, retrieve
+from .routers import admin, health, memories, profile, retrieve
 
 logger = get_logger(__name__)
 
 # Global service instances
-_services: dict = {}
+_services: dict[str, Any] = {}
 
 
-async def initialize_services() -> dict:
+async def initialize_services() -> dict[str, Any]:
     """Initialize all storage and service components."""
     settings = get_settings()
 
@@ -49,6 +50,7 @@ async def initialize_services() -> dict:
     document_store = LocalDocumentStore()
 
     # Cache layer
+    cache: RedisCache | MemoryCache
     if settings.CACHE_URL:
         cache = RedisCache()
         await cache.initialize()
@@ -103,6 +105,17 @@ async def initialize_services() -> dict:
         embedder=embedder,
     )
 
+    # Profile services
+    from hot_and_cold_memory.profile.augmenter import ProfileAugmenter
+    from hot_and_cold_memory.profile.extractor import ProfileExtractor
+    from hot_and_cold_memory.profile.builder import ProfileBuilder
+    from hot_and_cold_memory.profile.store import ProfileStore
+
+    profile_store = ProfileStore(metadata_store)
+    profile_extractor = ProfileExtractor()
+    profile_builder = ProfileBuilder(profile_store)
+    profile_augmenter = ProfileAugmenter(profile_store)
+
     # Memory pipeline
     pipeline = MemoryPipeline(
         metadata_store=metadata_store,
@@ -111,6 +124,18 @@ async def initialize_services() -> dict:
         embedder=embedder,
         frequency_tracker=frequency_tracker,
         migration_engine=migration_engine,
+        profile_extractor=profile_extractor,
+        profile_builder=profile_builder,
+    )
+
+    # Retrieval
+    retriever = UnifiedRetriever(
+        hot_tier=hot_tier,
+        cold_tier=cold_tier,
+        frequency_tracker=frequency_tracker,
+        embedder=embedder,
+        metadata_store=metadata_store,
+        profile_augmenter=profile_augmenter,
     )
 
     # Scheduler
@@ -129,11 +154,15 @@ async def initialize_services() -> dict:
         "pipeline": pipeline,
         "migration_engine": migration_engine,
         "migration_scheduler": migration_scheduler,
+        "profile_store": profile_store,
+        "profile_extractor": profile_extractor,
+        "profile_builder": profile_builder,
+        "profile_augmenter": profile_augmenter,
     }
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> Any:
     """Application lifespan handler."""
     setup_logging(get_settings().LOG_LEVEL)
     logger.info("starting_up")
@@ -148,6 +177,7 @@ async def lifespan(app: FastAPI):
     admin.set_migration_engine(_services["migration_engine"])
     admin.set_metadata_store(_services["metadata_store"])
     health.set_stores(_services["metadata_store"], _services["vector_store"])
+    profile.set_profile_store(_services["profile_store"])
 
     # Start background migration scheduler
     scheduler = _services["migration_scheduler"]
@@ -212,6 +242,7 @@ def create_app() -> FastAPI:
     # Register routers
     app.include_router(memories.router, prefix="/api/v1")
     app.include_router(retrieve.router, prefix="/api/v1")
+    app.include_router(profile.router, prefix="/api/v1")
     app.include_router(admin.router, prefix="/api/v1")
     app.include_router(health.router)
 
@@ -220,7 +251,7 @@ def create_app() -> FastAPI:
     app.mount("/metrics", metrics_app)
 
     @app.get("/")
-    async def root():
+    async def root() -> dict[str, Any]:
         return {"message": "Adaptive Memory API", "version": "0.1.0"}
 
     # Global exception handler for custom exception hierarchy
