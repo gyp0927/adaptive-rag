@@ -1,7 +1,7 @@
 """Metadata store implementation using SQLAlchemy async (PostgreSQL/SQLite)."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import and_, case, delete, func, or_, select, update
@@ -24,6 +24,8 @@ from .models import (
     MemoryLinkModel,
     MemoryModel,
     MigrationLogModel,
+    ProfileFactModel,
+    ProfileModel,
     TopicClusterModel,
 )
 
@@ -89,7 +91,7 @@ class PostgresMetadataStore(BaseMetadataStore):
             )
             from sqlalchemy import event
             @event.listens_for(self.engine.sync_engine, "connect")
-            def _enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+            def _enable_sqlite_foreign_keys(dbapi_connection: Any, _connection_record: Any) -> None:
                 cursor = dbapi_connection.cursor()
                 cursor.execute("PRAGMA foreign_keys=ON")
                 cursor.close()
@@ -208,7 +210,7 @@ class PostgresMetadataStore(BaseMetadataStore):
             result = await session.execute(
                 update(MemoryModel)
                 .where(MemoryModel.memory_id == _to_uuid_str(memory_id))
-                .values(**updates, updated_at=datetime.now(timezone.utc))
+                .values(**updates, updated_at=datetime.now(UTC))
                 .returning(MemoryModel)
             )
             await session.commit()
@@ -230,7 +232,7 @@ class PostgresMetadataStore(BaseMetadataStore):
             for upd in updates.values():
                 all_columns.update(upd.keys())
 
-            values_to_set: dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+            values_to_set: dict[str, Any] = {"updated_at": datetime.now(UTC)}
 
             for col in all_columns:
                 col_attr = getattr(MemoryModel, col)
@@ -260,7 +262,7 @@ class PostgresMetadataStore(BaseMetadataStore):
                 delete(MemoryModel).where(MemoryModel.memory_id.in_(id_strs))
             )
             await session.commit()
-            return result.rowcount or 0
+            return result.rowcount or 0  # type: ignore[attr-defined]
 
     async def list_memories(
         self,
@@ -305,24 +307,41 @@ class PostgresMetadataStore(BaseMetadataStore):
             )
             return result.scalar() or 0
 
+    # Keyword search guardrails to prevent expensive full-table scans.
+    _KEYWORD_MAX_TERMS: int = 5
+    _KEYWORD_MIN_TERM_LENGTH: int = 2
+
     async def search_by_keyword(
         self,
         query_text: str,
         tier: Tier | None = None,
         limit: int = 100,
     ) -> list[MemoryItem]:
-        """Search memories by keyword match in content (cross-db compatible)."""
+        """Search memories by keyword match in content (cross-db compatible).
+
+        Guardrails:
+        - Up to 5 terms (excess dropped)
+        - Terms shorter than 2 chars are skipped
+        - Hard limit of 100 results
+        """
         async with self.async_session() as session:
             conditions = []
             if tier is not None:
                 conditions.append(MemoryModel.tier == tier.value)
 
             # Split query into terms and require each term to match somewhere
-            terms = [t.strip() for t in query_text.split() if t.strip()]
+            raw_terms = [t.strip() for t in query_text.split() if t.strip()]
+            terms = [
+                t for t in raw_terms[: self._KEYWORD_MAX_TERMS]
+                if len(t) >= self._KEYWORD_MIN_TERM_LENGTH
+            ]
+            if not terms:
+                return []
+
             for term in terms:
                 conditions.append(MemoryModel.content.ilike(f"%{term}%"))
 
-            stmt = select(MemoryModel).where(and_(*conditions)).limit(limit)
+            stmt = select(MemoryModel).where(and_(*conditions)).limit(min(limit, 100))
             result = await session.execute(stmt)
             models = result.scalars().all()
             return [_memory_to_item(m) for m in models]
@@ -330,6 +349,158 @@ class PostgresMetadataStore(BaseMetadataStore):
     async def close(self) -> None:
         """Dispose the database engine."""
         await self.engine.dispose()
+
+    # --- Profile operations ---
+
+    async def create_profile_fact(
+        self,
+        user_id: str,
+        memory_id: uuid.UUID | None,
+        category: str,
+        key: str,
+        value: Any,
+        confidence: float,
+    ) -> None:
+        """Create a new profile fact."""
+        async with self.async_session() as session:
+            model = ProfileFactModel(
+                user_id=user_id,
+                memory_id=_to_uuid_str(memory_id) if memory_id else None,
+                category=category,
+                key=key,
+                value=value,
+                confidence=confidence,
+            )
+            session.add(model)
+            await session.commit()
+
+    async def get_current_profile_fact(
+        self,
+        user_id: str,
+        category: str,
+        key: str,
+    ) -> dict[str, Any] | None:
+        """Get current fact by user/category/key."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ProfileFactModel)
+                .where(
+                    ProfileFactModel.user_id == user_id,
+                    ProfileFactModel.category == category,
+                    ProfileFactModel.key == key,
+                    ProfileFactModel.is_current.is_(True),
+                )
+                .order_by(ProfileFactModel.valid_from.desc())
+            )
+            model = result.scalars().first()
+            if not model:
+                return None
+            return self._profile_fact_to_dict(model)
+
+    async def expire_profile_fact(self, fact_id: str) -> None:
+        """Mark a fact as expired."""
+        async with self.async_session() as session:
+            await session.execute(
+                update(ProfileFactModel)
+                .where(ProfileFactModel.fact_id == fact_id)
+                .values(valid_until=datetime.now(UTC), is_current=False)
+            )
+            await session.commit()
+
+    async def update_profile_fact_confidence(
+        self,
+        fact_id: str,
+        confidence: float,
+    ) -> None:
+        """Update fact confidence."""
+        async with self.async_session() as session:
+            await session.execute(
+                update(ProfileFactModel)
+                .where(ProfileFactModel.fact_id == fact_id)
+                .values(confidence=confidence)
+            )
+            await session.commit()
+
+    async def list_profile_facts(
+        self,
+        user_id: str,
+        category: str | None = None,
+        key: str | None = None,
+        is_current: bool | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List profile facts."""
+        async with self.async_session() as session:
+            stmt = select(ProfileFactModel).where(ProfileFactModel.user_id == user_id)
+            if category is not None:
+                stmt = stmt.where(ProfileFactModel.category == category)
+            if key is not None:
+                stmt = stmt.where(ProfileFactModel.key == key)
+            if is_current is not None:
+                stmt = stmt.where(ProfileFactModel.is_current.is_(is_current))
+            stmt = stmt.order_by(ProfileFactModel.valid_from.desc()).limit(limit)
+            result = await session.execute(stmt)
+            return [self._profile_fact_to_dict(m) for m in result.scalars().all()]
+
+    async def get_profile(self, user_id: str) -> dict[str, Any] | None:
+        """Get profile snapshot."""
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(ProfileModel).where(ProfileModel.user_id == user_id)
+            )
+            model = result.scalar_one_or_none()
+            return self._profile_to_dict(model) if model else None
+
+    async def upsert_profile(
+        self,
+        user_id: str,
+        snapshot: dict[str, Any],
+    ) -> None:
+        """Upsert profile snapshot."""
+        async with self.async_session() as session:
+            existing = await session.execute(
+                select(ProfileModel).where(ProfileModel.user_id == user_id)
+            )
+            model = existing.scalar_one_or_none()
+            if model:
+                for key, value in snapshot.items():
+                    setattr(model, key, value)
+                model.version += 1
+                model.updated_at = datetime.now(UTC)
+            else:
+                model = ProfileModel(user_id=user_id, **snapshot)
+                session.add(model)
+            await session.commit()
+
+    def _profile_fact_to_dict(self, model: ProfileFactModel) -> dict[str, Any]:
+        return {
+            "fact_id": model.fact_id,
+            "user_id": model.user_id,
+            "memory_id": model.memory_id,
+            "category": model.category,
+            "key": model.key,
+            "value": model.value,
+            "confidence": model.confidence,
+            "valid_from": model.valid_from,
+            "valid_until": model.valid_until,
+            "is_current": model.is_current,
+            "created_at": model.created_at,
+            "updated_at": model.updated_at,
+        }
+
+    def _profile_to_dict(self, model: ProfileModel) -> dict[str, Any]:
+        return {
+            "user_id": model.user_id,
+            "identity": dict(model.identity) if model.identity else {},
+            "preferences": list(model.preferences) if model.preferences else [],
+            "goals": list(model.goals) if model.goals else [],
+            "constraints": list(model.constraints) if model.constraints else [],
+            "habits": list(model.habits) if model.habits else [],
+            "attributes": dict(model.attributes) if model.attributes else {},
+            "summary": model.summary,
+            "version": model.version,
+            "updated_at": model.updated_at,
+        }
 
     async def query_memories_by_tier_and_score(
         self,
@@ -376,7 +547,8 @@ class PostgresMetadataStore(BaseMetadataStore):
                 MemoryModel.importance < max_importance,
                 MemoryModel.compressed.is_(True),
             ]
-            # Either never accessed (created_at < cutoff) or last_accessed_at < cutoff
+            # Either never accessed (created_at < cutoff), last_accessed_at < cutoff,
+            # or explicit expires_at has passed
             conditions.append(
                 or_(
                     and_(
@@ -384,6 +556,10 @@ class PostgresMetadataStore(BaseMetadataStore):
                         MemoryModel.created_at < cutoff,
                     ),
                     MemoryModel.last_accessed_at < cutoff,
+                    and_(
+                        MemoryModel.expires_at.isnot(None),
+                        MemoryModel.expires_at < datetime.now(UTC),
+                    ),
                 )
             )
 
@@ -408,14 +584,16 @@ class PostgresMetadataStore(BaseMetadataStore):
         id_strs = [_to_uuid_str(mid) for mid in memory_ids]
         cluster_str = _to_uuid_str(cluster_id) if cluster_id else None
         async with self.async_session() as session:
+            values: dict[str, Any] = {
+                "access_count": MemoryModel.access_count + 1,
+                "last_accessed_at": timestamp,
+            }
+            if cluster_str is not None:
+                values["topic_cluster_id"] = cluster_str
             await session.execute(
                 update(MemoryModel)
                 .where(MemoryModel.memory_id.in_(id_strs))
-                .values(
-                    access_count=MemoryModel.access_count + 1,
-                    last_accessed_at=timestamp,
-                    topic_cluster_id=cluster_str,
-                )
+                .values(**values)
             )
             await session.commit()
 
@@ -493,7 +671,7 @@ class PostgresMetadataStore(BaseMetadataStore):
                 delete(TopicClusterModel).where(TopicClusterModel.cluster_id.in_(id_strs))
             )
             await session.commit()
-            return result.rowcount or 0
+            return result.rowcount or 0  # type: ignore[attr-defined]
 
     # --- Access / migration log operations ---
 
@@ -585,7 +763,7 @@ class PostgresMetadataStore(BaseMetadataStore):
             model = existing.scalar_one_or_none()
             if model:
                 model.strength += link.strength * 0.1
-                model.last_accessed_at = datetime.now(timezone.utc)
+                model.last_accessed_at = datetime.now(UTC)
             else:
                 model = MemoryLinkModel(
                     source_memory_id=_to_uuid_str(link.source_memory_id),
@@ -676,4 +854,4 @@ class PostgresMetadataStore(BaseMetadataStore):
                 )
             )
             await session.commit()
-            return result.rowcount or 0
+            return result.rowcount or 0  # type: ignore[attr-defined]
