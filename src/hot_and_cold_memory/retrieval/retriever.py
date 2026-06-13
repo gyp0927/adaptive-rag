@@ -13,6 +13,9 @@ from hot_and_cold_memory.storage.metadata_store.base import BaseMetadataStore
 from hot_and_cold_memory.tiers.cold_tier import ColdTier
 from hot_and_cold_memory.tiers.hot_tier import HotTier
 
+from hot_and_cold_memory.profile.augmenter import ProfileAugmenter
+from hot_and_cold_memory.profile.store import ProfileStore
+
 from .router import FrequencyRouter, RetrievalResult
 
 logger = get_logger(__name__)
@@ -89,6 +92,7 @@ class UnifiedRetriever:
         frequency_tracker: FrequencyTracker,
         embedder: Embedder | None = None,
         metadata_store: BaseMetadataStore | None = None,
+        profile_augmenter: ProfileAugmenter | None = None,
     ) -> None:
         self.router = FrequencyRouter(
             hot_tier=hot_tier,
@@ -98,6 +102,9 @@ class UnifiedRetriever:
             metadata_store=metadata_store,
         )
         self._cache = _TTLCache(ttl_seconds=5.0, maxsize=200)
+        self.profile_augmenter = profile_augmenter
+        if self.profile_augmenter is None and metadata_store is not None:
+            self.profile_augmenter = ProfileAugmenter(ProfileStore(metadata_store))
 
     async def drain_background_tasks(self) -> None:
         """Wait for any pending background access-recording tasks."""
@@ -111,6 +118,7 @@ class UnifiedRetriever:
         decompress: bool = False,
         filters: dict[str, Any] | None = None,
         use_hybrid: bool = False,
+        use_profile: bool = True,
     ) -> RetrievalResult:
         """Execute a query and retrieve relevant chunks (with short-term cache).
 
@@ -121,6 +129,7 @@ class UnifiedRetriever:
             decompress: Decompress cold chunks.
             filters: Metadata filters.
             use_hybrid: If True, fuse vector + keyword results with RRF.
+            use_profile: If True, use user profile to rewrite query and boost results.
 
         Returns:
             Retrieval result.
@@ -130,13 +139,21 @@ class UnifiedRetriever:
             logger.debug("query_cache_hit", query=query_text[:50])
             return cached
 
+        effective_query = query_text
+        if use_profile and self.profile_augmenter:
+            effective_query = await self.profile_augmenter.rewrite_query(query_text)
+
         result = await self.router.route(
-            query_text=query_text,
+            query_text=effective_query,
             top_k=top_k,
             tier_preference=tier,
             force_decompress=decompress,
             filters=filters,
             use_hybrid=use_hybrid,
         )
+
+        if use_profile and self.profile_augmenter:
+            result.chunks = await self.profile_augmenter.rerank(effective_query, result.chunks)
+
         self._cache.set(query_text, top_k, tier, decompress, filters, result)
         return result

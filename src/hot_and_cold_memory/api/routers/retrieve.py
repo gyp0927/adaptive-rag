@@ -3,9 +3,9 @@
 from fastapi import APIRouter, HTTPException
 
 from hot_and_cold_memory.api.schemas.retrieve import (
+    RetrievedMemorySchema,
     RetrieveRequest,
     RetrieveResponse,
-    RetrievedMemorySchema,
 )
 from hot_and_cold_memory.core.config import Tier
 from hot_and_cold_memory.core.logging import get_logger
@@ -41,6 +41,7 @@ async def retrieve(request: RetrieveRequest) -> RetrieveResponse:
             tier=tier,
             filters=request.filters,
             use_hybrid=request.use_hybrid,
+            use_profile=request.use_profile,
         )
 
         return RetrieveResponse(

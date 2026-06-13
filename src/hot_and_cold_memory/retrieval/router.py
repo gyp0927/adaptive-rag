@@ -58,7 +58,7 @@ class FrequencyRouter:
         self.metadata_store = metadata_store
         self.ranker = ResultRanker()
         self.hybrid_ranker = HybridRanker()
-        self._background_tasks: set = set()
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     async def drain_background_tasks(self) -> None:
         """Wait for all pending background tasks to complete."""

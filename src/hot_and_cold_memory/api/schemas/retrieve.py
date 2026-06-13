@@ -1,7 +1,7 @@
 """API request/response schemas for memory retrieval."""
 
 import uuid
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,13 +15,17 @@ class RetrieveRequest(BaseModel):
         default=None,
         description="Tier preference. None = auto-route based on frequency.",
     )
-    filters: dict | None = Field(
+    filters: dict[str, Any] | None = Field(
         default=None,
         description="Metadata filters.",
     )
     use_hybrid: bool = Field(
         default=False,
         description="If True, fuse vector similarity with keyword search using RRF.",
+    )
+    use_profile: bool = Field(
+        default=True,
+        description="If True, use user profile to rewrite query and boost results.",
     )
 
 
