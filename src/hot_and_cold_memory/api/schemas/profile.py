@@ -1,6 +1,6 @@
 """API request/response schemas for user profiles."""
 
-from datetime import datetime, UTC
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field

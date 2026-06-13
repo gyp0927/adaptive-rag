@@ -16,6 +16,10 @@ from hot_and_cold_memory.ingestion.embedder import Embedder
 from hot_and_cold_memory.ingestion.pipeline import MemoryPipeline
 from hot_and_cold_memory.migration.engine import MigrationEngine
 from hot_and_cold_memory.migration.scheduler import MigrationScheduler
+from hot_and_cold_memory.profile.augmenter import ProfileAugmenter
+from hot_and_cold_memory.profile.builder import ProfileBuilder
+from hot_and_cold_memory.profile.extractor import ProfileExtractor
+from hot_and_cold_memory.profile.store import ProfileStore
 from hot_and_cold_memory.retrieval.retriever import UnifiedRetriever
 from hot_and_cold_memory.storage.cache.memory_cache import MemoryCache
 from hot_and_cold_memory.storage.cache.redis_cache import RedisCache
@@ -88,15 +92,6 @@ async def initialize_services() -> dict[str, Any]:
         embedder=embedder,
     )
 
-    # Retrieval
-    retriever = UnifiedRetriever(
-        hot_tier=hot_tier,
-        cold_tier=cold_tier,
-        frequency_tracker=frequency_tracker,
-        embedder=embedder,
-        metadata_store=metadata_store,
-    )
-
     # Migration
     migration_engine = MigrationEngine(
         hot_tier=hot_tier,
@@ -106,11 +101,6 @@ async def initialize_services() -> dict[str, Any]:
     )
 
     # Profile services
-    from hot_and_cold_memory.profile.augmenter import ProfileAugmenter
-    from hot_and_cold_memory.profile.extractor import ProfileExtractor
-    from hot_and_cold_memory.profile.builder import ProfileBuilder
-    from hot_and_cold_memory.profile.store import ProfileStore
-
     profile_store = ProfileStore(metadata_store)
     profile_extractor = ProfileExtractor()
     profile_builder = ProfileBuilder(profile_store)
@@ -128,7 +118,7 @@ async def initialize_services() -> dict[str, Any]:
         profile_builder=profile_builder,
     )
 
-    # Retrieval
+    # Retrieval (with profile augmentation)
     retriever = UnifiedRetriever(
         hot_tier=hot_tier,
         cold_tier=cold_tier,

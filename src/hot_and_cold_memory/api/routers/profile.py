@@ -1,12 +1,10 @@
 """Profile API router."""
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 from hot_and_cold_memory.api.schemas.profile import ProfileFactResponse, ProfileResponse
-from hot_and_cold_memory.core.logging import get_logger
 from hot_and_cold_memory.profile.store import ProfileStore
 
-logger = get_logger(__name__)
 router = APIRouter(prefix="/profile", tags=["Profile"])
 
 _profile_store: ProfileStore | None = None
@@ -24,6 +22,7 @@ async def get_profile() -> ProfileResponse:
     if not _profile_store:
         raise HTTPException(status_code=503, detail="Profile store not initialized")
 
+    # TODO: replace with authenticated user_id once auth is implemented
     data = await _profile_store.metadata_store.get_profile("default")
     if not data:
         return ProfileResponse(
@@ -58,16 +57,19 @@ async def get_profile() -> ProfileResponse:
 async def get_profile_history(
     category: str | None = None,
     key: str | None = None,
-    limit: int = 100,
+    is_current: bool | None = None,
+    limit: int = Query(100, ge=1, le=1000),
 ) -> list[ProfileFactResponse]:
     """Get historical profile facts."""
     if not _profile_store:
         raise HTTPException(status_code=503, detail="Profile store not initialized")
 
+    # TODO: replace with authenticated user_id once auth is implemented
     facts = await _profile_store.list_facts(
         user_id="default",
         category=category,
         key=key,
+        is_current=is_current,
         limit=limit,
     )
     return [
