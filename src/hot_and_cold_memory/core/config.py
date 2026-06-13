@@ -1,33 +1,33 @@
 """Central configuration with Pydantic-settings."""
 
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     """Storage tier types."""
 
     HOT = "hot"
     COLD = "cold"
 
 
-class VectorDBBackend(str, Enum):
+class VectorDBBackend(StrEnum):
     """Supported vector database backends."""
 
     QDRANT = "qdrant"
 
 
-class EmbeddingProvider(str, Enum):
+class EmbeddingProvider(StrEnum):
     """Embedding model providers."""
 
     OPENAI = "openai"
     SENTENCE_TRANSFORMERS = "sentence-transformers"
 
 
-class RoutingStrategy(str, Enum):
+class RoutingStrategy(StrEnum):
     """Query routing strategies."""
 
     HOT_ONLY = "hot_only"
@@ -36,7 +36,7 @@ class RoutingStrategy(str, Enum):
     BOTH = "both"
 
 
-class ChunkStrategy(str, Enum):
+class ChunkStrategy(StrEnum):
     """Text chunking strategies."""
 
     RECURSIVE = "recursive"
@@ -115,6 +115,9 @@ class Settings(BaseSettings):
     MIGRATION_INTERVAL_MINUTES: int = 60
     MIGRATION_MAX_CONCURRENT: int = 5
 
+    # Admin / Security
+    ADMIN_API_KEY: str | None = None  # If set, required for /admin/* endpoints
+
     # CORS
     CORS_ALLOW_ORIGINS: str = "*"  # Comma-separated list; "*" for dev only
 
@@ -153,11 +156,22 @@ class Settings(BaseSettings):
     ENABLE_CONSOLIDATION: bool = True
     CONSOLIDATION_SIMILARITY_THRESHOLD: float = 0.92
     CONSOLIDATION_BATCH_SIZE: int = 50
+    CONSOLIDATION_MAX_CANDIDATES: int = 2000
     CONSOLIDATION_MAX_PAIRS_PER_RUN: int = 10
     CONSOLIDATION_MIN_CONTENT_LENGTH: int = 20
 
     # Association graph
     ENABLE_ASSOCIATIONS: bool = True
+
+    # User Profile
+    ENABLE_PROFILE_AUGMENTATION: bool = True
+    ENABLE_PROFILE_QUERY_REWRITE: bool = True
+    ENABLE_PROFILE_RANKING_BOOST: bool = True
+    ENABLE_PROFILE_RECONCILER: bool = True
+    PROFILE_RECONCILER_CRON: str = "0 3 * * *"
+    PROFILE_BOOST_WEIGHT: float = 0.15
+    PROFILE_EXTRACTION_MODEL: str = "gpt-4o-mini"
+    PROFILE_MAX_FACTS_PER_MEMORY: int = 10
 
 
 # Global settings instance
@@ -168,5 +182,5 @@ def get_settings() -> Settings:
     """Get or create global settings instance."""
     global _settings
     if _settings is None:
-        _settings = Settings()
+        _settings = Settings()  # type: ignore[call-arg]
     return _settings
