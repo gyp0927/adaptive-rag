@@ -1,9 +1,13 @@
-from typing import Any
 import dataclasses
+from typing import Any
 
 from hot_and_cold_memory.core.config import get_settings
 from hot_and_cold_memory.core.llm_client import LLMClient
 from hot_and_cold_memory.core.logging import get_logger
+from hot_and_cold_memory.monitoring.metrics import (
+    PROFILE_QUERY_REWRITES_TOTAL,
+    PROFILE_RANKING_BOOSTS_TOTAL,
+)
 from hot_and_cold_memory.tiers.base import RetrievedMemory
 
 from .schemas import Profile
@@ -37,9 +41,12 @@ class ProfileAugmenter:
                 max_tokens=256,
                 temperature=0.0,
             )
-            return rewritten.strip().strip('"')
+            result = rewritten.strip().strip('"')
+            PROFILE_QUERY_REWRITES_TOTAL.labels(status="success").inc()
+            return result
         except Exception as e:
             logger.warning("profile_query_rewrite_failed", error=str(e))
+            PROFILE_QUERY_REWRITES_TOTAL.labels(status="failure").inc()
             return query
 
     async def rerank(
@@ -65,6 +72,7 @@ class ProfileAugmenter:
                 dataclasses.replace(memory, score=new_score)
             )
 
+        PROFILE_RANKING_BOOSTS_TOTAL.inc()
         return sorted(boosted, key=lambda m: m.score, reverse=True)
 
     def _build_rewrite_prompt(self, query: str, profile: Profile) -> str:

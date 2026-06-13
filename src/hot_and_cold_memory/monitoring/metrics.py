@@ -1,6 +1,6 @@
 """Prometheus metrics for monitoring."""
 
-from prometheus_client import Counter, Gauge, Histogram, Info
+from prometheus_client import Counter, Gauge, Histogram
 
 # Query metrics
 QUERY_TOTAL = Counter(
@@ -50,5 +50,15 @@ LLM_REQUEST_DURATION = Histogram(
     buckets=[0.1, 0.5, 1.0, 2.5, 5.0, 10.0],
 )
 
-# System info
-APP_INFO = Info("memory_app", "Application information")
+PROFILE_EXTRACTION_TOTAL = Counter(
+    "profile_extraction_total", "Total profile extraction attempts", ["status"]
+)
+PROFILE_QUERY_REWRITES_TOTAL = Counter(
+    "profile_query_rewrites_total", "Total profile query rewrites", ["status"]
+)
+PROFILE_RANKING_BOOSTS_TOTAL = Counter(
+    "profile_ranking_boosts_total", "Total profile ranking boosts applied"
+)
+PROFILE_RECONCILER_RUNS_TOTAL = Counter(
+    "profile_reconciler_runs_total", "Total profile reconciler runs", ["status"]
+)

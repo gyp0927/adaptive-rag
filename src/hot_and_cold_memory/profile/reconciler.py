@@ -3,6 +3,7 @@ from typing import Any
 from hot_and_cold_memory.core.config import get_settings
 from hot_and_cold_memory.core.llm_client import LLMClient
 from hot_and_cold_memory.core.logging import get_logger
+from hot_and_cold_memory.monitoring.metrics import PROFILE_RECONCILER_RUNS_TOTAL
 
 from .store import ProfileStore
 
@@ -26,12 +27,17 @@ class ProfileReconciler:
         if not profile or profile.is_empty():
             return
 
-        summary = await self._generate_summary(profile)
-        await self.store.metadata_store.upsert_profile(
-            user_id=user_id,
-            snapshot={"summary": summary},
-        )
-        logger.info("profile_reconciled", user_id=user_id, summary=summary[:100])
+        try:
+            summary = await self._generate_summary(profile)
+            await self.store.metadata_store.upsert_profile(
+                user_id=user_id,
+                snapshot={"summary": summary},
+            )
+            logger.info("profile_reconciled", user_id=user_id, summary=summary[:100])
+            PROFILE_RECONCILER_RUNS_TOTAL.labels(status="success").inc()
+        except Exception as e:
+            logger.warning("profile_reconcile_failed", user_id=user_id, error=str(e))
+            PROFILE_RECONCILER_RUNS_TOTAL.labels(status="failure").inc()
 
     def _build_summary_prompt(self, profile: Any) -> str:
         parts = []

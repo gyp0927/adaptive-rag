@@ -5,6 +5,7 @@ from typing import Any
 from hot_and_cold_memory.core.config import get_settings
 from hot_and_cold_memory.core.llm_client import LLMClient
 from hot_and_cold_memory.core.logging import get_logger
+from hot_and_cold_memory.monitoring.metrics import PROFILE_EXTRACTION_TOTAL
 
 from .schemas import ProfileFact
 
@@ -35,9 +36,12 @@ class ProfileExtractor:
                 temperature=0.0,
                 response_format={"type": "json_object"},
             )
-            return self._parse_response(response)
+            facts = self._parse_response(response)
+            PROFILE_EXTRACTION_TOTAL.labels(status="success").inc(len(facts))
+            return facts
         except Exception as e:
             logger.warning("profile_extraction_failed", error=str(e))
+            PROFILE_EXTRACTION_TOTAL.labels(status="failure").inc()
             return []
 
     def _build_prompt(self, content: str) -> str:
