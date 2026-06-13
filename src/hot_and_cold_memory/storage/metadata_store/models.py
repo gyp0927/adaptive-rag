@@ -176,3 +176,76 @@ class MemoryLinkModel(Base):
         Index("ix_memory_links_source_target", "source_memory_id", "target_memory_id"),
         Index("ix_memory_links_target", "target_memory_id"),
     )
+
+
+class ProfileFactModel(Base):
+    """A single profile assertion with a validity timeline."""
+
+    __tablename__ = "profile_facts"
+
+    __table_args__ = (
+        Index("ix_profile_facts_user_current", "user_id", "is_current"),
+        Index("ix_profile_facts_user_cat_key", "user_id", "category", "key"),
+    )
+
+    fact_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="default", index=True
+    )
+    memory_id: Mapped[str | None] = mapped_column(
+        String(36),
+        ForeignKey("memories.memory_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(64), nullable=False)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.5)
+
+    valid_from: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now()
+    )
+    valid_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_current: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, index=True
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now()
+    )
+
+
+class ProfileModel(Base):
+    """Cached snapshot of the current effective profile."""
+
+    __tablename__ = "profiles"
+
+    profile_id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, default="default"
+    )
+
+    identity: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    preferences: Mapped[list[Any]] = mapped_column(JSON, nullable=False, default=list)
+    goals: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    constraints: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    habits: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=func.now(), onupdate=func.now()
+    )
