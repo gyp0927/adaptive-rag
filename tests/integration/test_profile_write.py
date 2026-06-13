@@ -1,4 +1,3 @@
-import uuid
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,13 +9,13 @@ from hot_and_cold_memory.ingestion.pipeline import MemoryPipeline
 async def test_pipeline_extracts_profile(metadata_store, vector_store, document_store):
     from hot_and_cold_memory.core.config import get_settings
     from hot_and_cold_memory.frequency.tracker import FrequencyTracker
-    from hot_and_cold_memory.tiers.hot_tier import HotTier
+    from hot_and_cold_memory.profile.builder import ProfileBuilder
+    from hot_and_cold_memory.profile.extractor import ProfileExtractor
+    from hot_and_cold_memory.profile.store import ProfileStore
+    from hot_and_cold_memory.storage.cache.memory_cache import MemoryCache
     from hot_and_cold_memory.tiers.cold_tier import ColdTier
     from hot_and_cold_memory.tiers.compression import CompressionEngine
-    from hot_and_cold_memory.storage.cache.memory_cache import MemoryCache
-    from hot_and_cold_memory.profile.extractor import ProfileExtractor
-    from hot_and_cold_memory.profile.builder import ProfileBuilder
-    from hot_and_cold_memory.profile.store import ProfileStore
+    from hot_and_cold_memory.tiers.hot_tier import HotTier
 
     cache = MemoryCache()
     embedder = MagicMock()

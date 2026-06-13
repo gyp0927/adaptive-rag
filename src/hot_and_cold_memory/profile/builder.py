@@ -45,4 +45,4 @@ class ProfileBuilder:
         """Compare two fact values for equality."""
         if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
             return list(a) == list(b)
-        return a == b
+        return bool(a == b)

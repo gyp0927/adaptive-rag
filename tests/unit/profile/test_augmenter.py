@@ -2,10 +2,10 @@ import uuid
 
 import pytest
 
+from hot_and_cold_memory.core.config import Tier
 from hot_and_cold_memory.profile.augmenter import ProfileAugmenter
 from hot_and_cold_memory.profile.store import ProfileStore
 from hot_and_cold_memory.tiers.base import RetrievedMemory
-from hot_and_cold_memory.core.config import Tier
 
 
 @pytest.mark.asyncio

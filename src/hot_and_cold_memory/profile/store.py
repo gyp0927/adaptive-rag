@@ -97,7 +97,7 @@ class ProfileStore:
         habits: list[str] = []
         attributes: dict[str, Any] = {}
 
-        def _safe_add_unique(items: list, value: Any) -> None:
+        def _safe_add_unique(items: list[Any], value: Any) -> None:
             try:
                 if value not in items:
                     items.append(value)
