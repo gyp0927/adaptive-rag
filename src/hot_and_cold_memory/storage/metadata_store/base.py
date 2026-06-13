@@ -3,7 +3,7 @@
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from hot_and_cold_memory.core.config import Tier
@@ -22,8 +22,8 @@ class MemoryItem:
     importance: float = 0.5
     access_count: int = 0
     frequency_score: float = 0.0
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_accessed_at: datetime | None = None
     last_migrated_at: datetime | None = None
     topic_cluster_id: uuid.UUID | None = None
@@ -44,7 +44,7 @@ class TopicCluster:
     access_count: int = 0
     frequency_score: float = 0.0
     member_count: int = 1
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_accessed_at: datetime | None = None
 
 
@@ -56,7 +56,7 @@ class AccessLog:
     log_id: int | None = None
     query_cluster_id: uuid.UUID | None = None
     query_text: str | None = None
-    retrieved_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    retrieved_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     response_time_ms: int | None = None
     tier_accessed: str | None = None
 
@@ -71,7 +71,7 @@ class MigrationLog:
     new_size: int
     log_id: int | None = None
     compression_ratio: float | None = None
-    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    started_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
     status: str = "pending"
     error_message: str | None = None
@@ -85,7 +85,7 @@ class MemoryLink:
     target_memory_id: uuid.UUID
     link_type: str = "coaccess"
     strength: float = 1.0
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_accessed_at: datetime | None = None
     link_id: int | None = None
 
@@ -319,6 +319,71 @@ class BaseMetadataStore(ABC):
     @abstractmethod
     async def delete_links_for_memories(self, memory_ids: list[uuid.UUID]) -> int:
         """Delete all links involving any of the given memory IDs."""
+        pass
+
+    # --- Profile operations ---
+
+    @abstractmethod
+    async def create_profile_fact(
+        self,
+        user_id: str,
+        memory_id: uuid.UUID | None,
+        category: str,
+        key: str,
+        value: Any,
+        confidence: float,
+    ) -> None:
+        """Create a new profile fact."""
+        pass
+
+    @abstractmethod
+    async def get_current_profile_fact(
+        self,
+        user_id: str,
+        category: str,
+        key: str,
+    ) -> dict[str, Any] | None:
+        """Get the current (is_current=true) fact for a given key."""
+        pass
+
+    @abstractmethod
+    async def expire_profile_fact(self, fact_id: str) -> None:
+        """Mark a fact as no longer current."""
+        pass
+
+    @abstractmethod
+    async def update_profile_fact_confidence(
+        self,
+        fact_id: str,
+        confidence: float,
+    ) -> None:
+        """Update the confidence of a fact."""
+        pass
+
+    @abstractmethod
+    async def list_profile_facts(
+        self,
+        user_id: str,
+        category: str | None = None,
+        key: str | None = None,
+        is_current: bool | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """List profile facts with optional filters."""
+        pass
+
+    @abstractmethod
+    async def get_profile(self, user_id: str) -> dict[str, Any] | None:
+        """Get the current profile snapshot."""
+        pass
+
+    @abstractmethod
+    async def upsert_profile(
+        self,
+        user_id: str,
+        snapshot: dict[str, Any],
+    ) -> None:
+        """Insert or update the profile snapshot."""
         pass
 
     @abstractmethod
