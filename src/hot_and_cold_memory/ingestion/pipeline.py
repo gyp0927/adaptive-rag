@@ -2,12 +2,13 @@
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from hot_and_cold_memory.core.config import Tier, get_settings
 from hot_and_cold_memory.core.logging import get_logger
 from hot_and_cold_memory.frequency.tracker import FrequencyTracker
+from hot_and_cold_memory.migration.engine import MigrationEngine
 from hot_and_cold_memory.monitoring.metrics import MEMORIES_TOTAL
 from hot_and_cold_memory.storage.metadata_store.base import BaseMetadataStore
 from hot_and_cold_memory.tiers.cold_tier import ColdTier
@@ -15,6 +16,10 @@ from hot_and_cold_memory.tiers.hot_tier import HotTier
 
 from .embedder import Embedder
 from .importance_scorer import ImportanceScorer
+
+from hot_and_cold_memory.profile.builder import ProfileBuilder
+from hot_and_cold_memory.profile.extractor import ProfileExtractor
+from hot_and_cold_memory.profile.store import ProfileStore
 
 logger = get_logger(__name__)
 
@@ -56,7 +61,9 @@ class MemoryPipeline:
         cold_tier: ColdTier,
         embedder: Embedder,
         frequency_tracker: FrequencyTracker,
-        migration_engine=None,
+        migration_engine: MigrationEngine | None = None,
+        profile_extractor: ProfileExtractor | None = None,
+        profile_builder: ProfileBuilder | None = None,
     ) -> None:
         self.settings = get_settings()
         self.metadata_store = metadata_store
@@ -68,6 +75,8 @@ class MemoryPipeline:
         self.evict_percent = self.settings.HOT_TIER_EVICT_PERCENT
         self.migration_engine = migration_engine
         self.importance_scorer = ImportanceScorer()
+        self.profile_extractor = profile_extractor or ProfileExtractor()
+        self.profile_builder = profile_builder or ProfileBuilder(ProfileStore(metadata_store))
 
     async def write_memory(
         self,
@@ -91,7 +100,7 @@ class MemoryPipeline:
         Returns:
             Memory write result.
         """
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         memory_id = uuid.uuid4()
 
         try:
@@ -153,7 +162,19 @@ class MemoryPipeline:
             # Hot tier capacity check
             await self._enforce_hot_tier_capacity()
 
-            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+            # Extract profile facts from the new memory
+            try:
+                facts = await self.profile_extractor.extract(content)
+                if facts:
+                    await self.profile_builder.integrate_facts(
+                        user_id="default",
+                        memory_id=memory_id,
+                        facts=facts,
+                    )
+            except Exception as e:
+                logger.warning("profile_extraction_after_write_failed", error=str(e))
+
+            elapsed = (datetime.now(UTC) - start_time).total_seconds() * 1000
 
             # Update Prometheus gauges
             hot_total = await self.metadata_store.count_memories_by_tier(Tier.HOT)
@@ -202,7 +223,7 @@ class MemoryPipeline:
         if not items:
             return []
 
-        start_time = datetime.now(timezone.utc)
+        start_time = datetime.now(UTC)
         from hot_and_cold_memory.tiers.base import MemoryEntry
 
         # Pre-validate and assign IDs
@@ -230,11 +251,11 @@ class MemoryPipeline:
         # Check topic frequencies in batch
         topic_infos = await self.frequency_tracker.get_topic_frequencies_batch(embeddings)
 
-        hot_entries: list[tuple[uuid.UUID, MemoryEntry, list[float], dict[str, Any]]] = []
-        cold_entries: list[tuple[uuid.UUID, MemoryEntry, list[float], dict[str, Any]]] = []
+        hot_entries: list[tuple[int, MemoryEntry, list[float], dict[str, Any]]] = []
+        cold_entries: list[tuple[int, MemoryEntry, list[float], dict[str, Any]]] = []
 
         for (orig_idx, item, mid), embedding, topic_info in zip(
-            valid_items, embeddings, topic_infos
+            valid_items, embeddings, topic_infos, strict=True
         ):
             is_hot = (
                 topic_info.frequency >= self.HOT_TOPIC_THRESHOLD
@@ -295,7 +316,7 @@ class MemoryPipeline:
             scored = await self.importance_scorer.score_batch(
                 [(content, mt) for _, content, mt in auto_score_items]
             )
-            for (mid, _content, _mt), score in zip(auto_score_items, scored):
+            for (mid, _content, _mt), score in zip(auto_score_items, scored, strict=True):
                 importance_updates[mid] = {"importance": score}
 
         for _, entry, _, meta in hot_entries + cold_entries:
@@ -336,7 +357,20 @@ class MemoryPipeline:
         # Hot tier capacity check
         await self._enforce_hot_tier_capacity()
 
-        elapsed = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
+        # Extract profile facts from the new memories
+        for _, entry, _, _meta in hot_entries + cold_entries:
+            try:
+                facts = await self.profile_extractor.extract(entry.content)
+                if facts:
+                    await self.profile_builder.integrate_facts(
+                        user_id="default",
+                        memory_id=entry.memory_id,
+                        facts=facts,
+                    )
+            except Exception as e:
+                logger.warning("profile_extraction_after_write_failed", error=str(e))
+
+        elapsed = (datetime.now(UTC) - start_time).total_seconds() * 1000
         for r in final_results:
             r.processing_time_ms = elapsed / max(len(items), 1)
 
