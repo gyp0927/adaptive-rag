@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, HTTPException, Query
 
-from hot_and_cold_memory.api.schemas.profile import ProfileFactResponse, ProfileResponse
+from hot_and_cold_memory.api.schemas.profile import (
+    ProfileFacet,
+    ProfileFactResponse,
+    ProfileResponse,
+)
 from hot_and_cold_memory.profile.store import ProfileStore
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
@@ -41,7 +45,7 @@ async def get_profile() -> ProfileResponse:
         user_id=data["user_id"],
         identity=data.get("identity", {}),
         preferences=[
-            {"key": p["key"], "value": p["value"], "confidence": p.get("confidence")}
+            ProfileFacet(key=p["key"], value=p["value"], confidence=p.get("confidence"))
             for p in data.get("preferences", [])
         ],
         goals=data.get("goals", []),
